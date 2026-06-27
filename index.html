@@ -197,21 +197,6 @@
     .theme-light .nt-cat-btn:hover { background: rgba(0, 0, 0, 0.12); }
     .theme-light .nt-cat-btn.active { background: var(--accent); color: #ffffff; }
 
-    .nt-search-wrap { position: relative; width: 560px; max-width: 90%; }
-    .nt-search-icon {
-      position: absolute; left: 16px; top: 50%; transform: translateY(-50%);
-      font-size: 18px; color: var(--text-dim); pointer-events: none;
-    }
-    .nt-search {
-      width: 100%; height: 48px; background: var(--search-bg); border: 1px solid var(--border);
-      border-radius: 8px; padding: 0 18px 0 48px; color: var(--text-main);
-      font-size: 14px; font-family: inherit; outline: none; box-shadow: 0 2px 6px rgba(0,0,0,0.12);
-      transition: border-color 0.15s, box-shadow 0.15s;
-    }
-    .theme-light .nt-search { box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
-    .nt-search:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0, 96, 223, 0.3); }
-    .nt-hint { display: none !important; }
-    
     /* ─── ショートカット（お気に入り）と削除ボタン ─── */
     .shortcuts {
       display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
@@ -509,7 +494,7 @@
       <div class="card-title">💬 We talks（チャットアプリ）</div>
       <ul>
         <li><strong>IP連動ユーザー名:</strong> We talksを開くと、接続環境（IPアドレス）に基づいて自動で名前（例：ユーザー2944）が割り振られます。</li>
-        <li><strong>かんたんユーザー名変更:</strong> トーク一覧の右上に表示されているご自身の名前（緑色）をタップするだけで、パスキーなしで自由に名前変更ができます。一度変更すると同じIP環境であればブラウザを閉じても次回から名前が自動で引き継がれます。</li>
+        <li><strong>かんたんユーザー名変更:</strong> トーク一覧 of 右上に表示されているご自身の名前（緑色）をタップするだけで、パスキーなしで自由に名前変更ができます。一度変更すると同じIP環境であればブラウザを閉じても次回から名前が自動で引き継がれます。</li>
         <li><strong>管理者キー設定:</strong> ⚙ボタンのSupabase設定の変更は、セキュアに管理するためパスキー <strong>「mozunbu_1203」</strong> でロックされています。</li>
       </ul>
     </div>
@@ -555,6 +540,7 @@
 `;
 
   // ─── [We talks チャットアプリ] 仮想ソースコードの定義 ───────────────────────
+  // ブラウザのHTMLパーサによる誤認識を完全に避けるため、すべてのscript閉じタグを「\x3C\x2Fscript\x3E」(スラッシュもエスケープ)で完全安全記述
   const CHAT_APP_HTML = `
 <!DOCTYPE html>
 <html lang="ja">
@@ -938,9 +924,37 @@
           otherActiveCount = activeMembers.length;
         }
 
-        document.querySelectorAll('.msg.me .msg-read-status').forEach(el => {
-          if (otherActiveCount > 0) {
-            el.textContent = otherActiveCount > 1 ? "既読 " + otherActiveCount : "既読";
+        // 既読がついた場合、それをローカルデータベースに永続保存する
+        if (otherActiveCount > 0) {
+          const db = getLocalDB();
+          let changed = false;
+          if (db.messages[activeRoomId]) {
+            db.messages[activeRoomId].forEach(msg => {
+              // 自分が送信した未読（または既読人数が少ない）メッセージを新しい人数に上書き更新
+              if (msg.sender === getSessionUser() && (!msg.readCount || msg.readCount < otherActiveCount)) {
+                msg.readCount = otherActiveCount;
+                changed = true;
+              }
+            });
+          }
+          if (changed) {
+            saveLocalDB(db);
+          }
+        }
+
+        document.querySelectorAll('.msg.me .msg-read-status').forEach((el, idx) => {
+          let finalCount = otherActiveCount;
+          
+          // データベースに記録された永続的な既読情報を読み込む
+          const db = getLocalDB();
+          const msgs = db.messages[activeRoomId] || [];
+          const myMsgs = msgs.filter(m => m.sender === getSessionUser());
+          if (myMsgs[idx] && myMsgs[idx].readCount) {
+            finalCount = Math.max(finalCount, myMsgs[idx].readCount);
+          }
+
+          if (finalCount > 0) {
+            el.textContent = finalCount > 1 ? "既読 " + finalCount : "既読";
           } else {
             el.textContent = "";
           }
@@ -1052,10 +1066,10 @@
           activeRoomId = null;
           renderLobby();
         } else if (view === 'chat') {
+          startLocalPresence();
           DOM.btnBack.style.visibility = 'visible';
           DOM.btnToSettings.style.visibility = 'hidden';
           unreadCounts[activeRoomId] = 0;
-          startLocalPresence();
           loadRoomTitleAndRender();
         } else if (view === 'settings') {
           stopLocalPresence();
@@ -1099,6 +1113,7 @@
           delBtn.style.cssText = 'background:#ff3b30; color:white; border:none; padding:4px 10px; border-radius:4px; font-size:11px; cursor:pointer; font-weight:bold;';
           delBtn.textContent = '削除';
           delBtn.addEventListener('click', async () => {
+            // 安全なダブルクォーテーション結合に修正
             if (confirm("本当に「" + room.name + "」トークルームと、その中のチャット履歴をすべて削除しますか？")) {
               await deleteRoomAndMessages(room.id);
               renderSettingsRoomList();
@@ -1286,9 +1301,9 @@
         readStatus.className = 'msg-read-status';
         
         if (isMe) {
-          let otherActiveCount = 0;
+          let count = msg.readCount || 0;
           if (supabaseClient) {
-            otherActiveCount = roomPresenceMembers.filter(member => member !== getSessionUser()).length;
+            count = Math.max(count, roomPresenceMembers.filter(member => member !== getSessionUser()).length);
           } else {
             let data = {};
             try {
@@ -1297,11 +1312,12 @@
             } catch(e) {}
             const membersInRoom = data[activeRoomId] || {};
             const now = Date.now();
-            otherActiveCount = Object.keys(membersInRoom).filter(u => u !== getSessionUser() && (now - membersInRoom[u]) < 5000).length;
+            const localCount = Object.keys(membersInRoom).filter(u => u !== getSessionUser() && (now - membersInRoom[u]) < 5000).length;
+            count = Math.max(count, localCount);
           }
 
-          if (otherActiveCount > 0) {
-            readStatus.textContent = otherActiveCount > 1 ? "既読 " + otherActiveCount : "既読";
+          if (count > 0) {
+            readStatus.textContent = count > 1 ? "既読 " + count : "既読";
           }
         }
 
@@ -2138,6 +2154,9 @@
       // 【同数字連続出し（スタッキングルール）用のステート】
       let stackedValue = null; 
       let lastAction = null; // 'draw', 'play_me', 'play_opp', 'draw_opp', null
+
+      const COLORS = ['red', 'yellow', 'green', 'blue'];
+      const VALUES = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'Skip', 'Draw2'];
 
       const DOM = {
         lobby: document.getElementById('lobby-screen'),
@@ -2991,7 +3010,7 @@
 
   function openTab(url) {
     const id = ++idCounter;
-    // 履歴管理用変数のタイポを完全に修正 (histIdx)
+    // タイポ（fontIdx）を正規の履歴インデックス変数（histIdx）に修復
     const tab = { id: id, title: "新しいタブ", favicon: "🌐", url: null, history: [], histIdx: -1 };
     tabs.push(tab);
     const ntPage = buildNTPage(id);
