@@ -197,7 +197,27 @@
     .theme-light .nt-cat-btn:hover { background: rgba(0, 0, 0, 0.12); }
     .theme-light .nt-cat-btn.active { background: var(--accent); color: #ffffff; }
 
-    /* ─── ショートカット（お気に入り）と削除ボタン ─── */
+    /* iPadOSの崩壊を防ぐ 100%確実な検索窓のスタイル */
+    .nt-search-wrap {
+      position: relative;
+      width: 100%;
+      max-width: 560px;
+      flex-shrink: 0;
+    }
+    .nt-search-icon {
+      position: absolute; left: 16px; top: 50%; transform: translateY(-50%);
+      font-size: 18px; color: var(--text-dim); pointer-events: none;
+    }
+    .nt-search {
+      width: 100%; height: 48px; background: var(--search-bg); border: 1px solid var(--border);
+      border-radius: 8px; padding: 0 18px 0 48px; color: var(--text-main);
+      font-size: 14px; font-family: inherit; outline: none; box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .theme-light .nt-search { box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
+    .nt-search:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0, 96, 223, 0.3); }
+    .nt-hint { display: none !important; }
+    
     .shortcuts {
       display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
       gap: 16px; width: 560px; max-width: 90%; justify-content: center;
@@ -307,7 +327,7 @@
 
     /* ─── エラーページ (iOS互換絶対配置型) ─── */
     .error-page {
-      width: 100%; height: 100%; flex: 1; background: var(--ntpage-bg); display: none;
+      position: absolute; inset: 0; width: 100%; height: 100%; background: var(--ntpage-bg); display: none;
       flex-direction: column; align-items: center; justify-content: center; gap: 20px;
       color: var(--text-main); text-align: center; padding: 40px;
     }
@@ -494,7 +514,7 @@
       <div class="card-title">💬 We talks（チャットアプリ）</div>
       <ul>
         <li><strong>IP連動ユーザー名:</strong> We talksを開くと、接続環境（IPアドレス）に基づいて自動で名前（例：ユーザー2944）が割り振られます。</li>
-        <li><strong>かんたんユーザー名変更:</strong> トーク一覧 of 右上に表示されているご自身の名前（緑色）をタップするだけで、パスキーなしで自由に名前変更ができます。一度変更すると同じIP環境であればブラウザを閉じても次回から名前が自動で引き継がれます。</li>
+        <li><strong>かんたんユーザー名変更:</strong> トーク一覧の右上に表示されているご自身の名前（緑色）をタップするだけで、パスキーなしで自由に名前変更ができます。一度変更すると同じIP環境であればブラウザを閉じても次回から名前が自動で引き継がれます。</li>
         <li><strong>管理者キー設定:</strong> ⚙ボタンのSupabase設定の変更は、セキュアに管理するためパスキー <strong>「mozunbu_1203」</strong> でロックされています。</li>
       </ul>
     </div>
@@ -540,7 +560,7 @@
 `;
 
   // ─── [We talks チャットアプリ] 仮想ソースコードの定義 ───────────────────────
-  // ブラウザのHTMLパーサによる誤認識を完全に避けるため、すべてのscript閉じタグを「\x3C\x2Fscript\x3E」(スラッシュもエスケープ)で完全安全記述
+  // スラッシュ「/」部分を完全に16進数エンコードした「\x3C\x2Fscript\x3E」に統一することで、iPadOS/Safariのコンパイルクラッシュを完全に根絶
   const CHAT_APP_HTML = `
 <!DOCTYPE html>
 <html lang="ja">
@@ -865,7 +885,33 @@
 
       // アクティビティ同期（オフライン・オンライン・既読用）
       const ACTIVE_USERS_KEY = 'wetalks_active_users_in_rooms_v1';
+      const READ_MAP_KEY = 'wetalks_read_messages_map_v1'; // 既読キャッシュ用のローカルDB
       let localPresenceInterval = null;
+
+      // 既読情報をローカルで永続保存・更新するヘルパー関数
+      function markMessageAsReadLocal(msgId, count) {
+        let map = {};
+        try {
+          const raw = localStorage.getItem(READ_MAP_KEY);
+          if (raw) map = JSON.parse(raw);
+        } catch(e) {}
+        
+        if (!map[msgId] || map[msgId] < count) {
+          map[msgId] = count;
+          localStorage.setItem(READ_MAP_KEY, JSON.stringify(map));
+          return true;
+        }
+        return false;
+      }
+
+      function getMessageReadCountLocal(msgId) {
+        let map = {};
+        try {
+          const raw = localStorage.getItem(READ_MAP_KEY);
+          if (raw) map = JSON.parse(raw);
+        } catch(e) {}
+        return map[msgId] || 0;
+      }
 
       function startLocalPresence() {
         if (localPresenceInterval) clearInterval(localPresenceInterval);
@@ -924,39 +970,36 @@
           otherActiveCount = activeMembers.length;
         }
 
-        // 既読がついた場合、それをローカルデータベースに永続保存する
+        // 相手がアクティブに滞在している場合、自分の全メッセージを永続的に既読（既読数保存）に更新
         if (otherActiveCount > 0) {
           const db = getLocalDB();
+          const msgs = db.messages[activeRoomId] || [];
           let changed = false;
-          if (db.messages[activeRoomId]) {
-            db.messages[activeRoomId].forEach(msg => {
-              // 自分が送信した未読（または既読人数が少ない）メッセージを新しい人数に上書き更新
-              if (msg.sender === getSessionUser() && (!msg.readCount || msg.readCount < otherActiveCount)) {
-                msg.readCount = otherActiveCount;
+          msgs.forEach(m => {
+            if (m.sender === getSessionUser()) {
+              if (markMessageAsReadLocal(m.id, otherActiveCount)) {
                 changed = true;
               }
-            });
-          }
-          if (changed) {
-            saveLocalDB(db);
+            }
+          });
+          if (changed && !supabaseClient) {
+            saveLocalDB(db); // オフライン用の変更トリガー
           }
         }
 
-        document.querySelectorAll('.msg.me .msg-read-status').forEach((el, idx) => {
-          let finalCount = otherActiveCount;
-          
-          // データベースに記録された永続的な既読情報を読み込む
-          const db = getLocalDB();
-          const msgs = db.messages[activeRoomId] || [];
-          const myMsgs = msgs.filter(m => m.sender === getSessionUser());
-          if (myMsgs[idx] && myMsgs[idx].readCount) {
-            finalCount = Math.max(finalCount, myMsgs[idx].readCount);
-          }
+        // メッセージDOMをスキャンし、各メッセージの既読数（キャッシュ優先）でUIを完全上書き
+        document.querySelectorAll('.msg.me').forEach(el => {
+          const msgId = el.getAttribute('data-msgid');
+          let count = getMessageReadCountLocal(msgId);
+          count = Math.max(count, otherActiveCount); // 最新のリアルタイム数を維持
 
-          if (finalCount > 0) {
-            el.textContent = finalCount > 1 ? "既読 " + finalCount : "既読";
-          } else {
-            el.textContent = "";
+          const readStatusEl = el.querySelector('.msg-read-status');
+          if (readStatusEl) {
+            if (count > 0) {
+              readStatusEl.textContent = count > 1 ? "既読 " + count : "既読";
+            } else {
+              readStatusEl.textContent = "";
+            }
           }
         });
       }
@@ -1059,20 +1102,18 @@
         DOM.viewSettings.style.display = (view === 'settings') ? 'flex' : 'none';
 
         if (view === 'lobby') {
-          stopLocalPresence();
           DOM.btnBack.style.visibility = 'hidden';
           DOM.btnToSettings.style.visibility = 'visible';
           DOM.titleText.textContent = 'We talks';
           activeRoomId = null;
           renderLobby();
         } else if (view === 'chat') {
-          startLocalPresence();
           DOM.btnBack.style.visibility = 'visible';
           DOM.btnToSettings.style.visibility = 'hidden';
           unreadCounts[activeRoomId] = 0;
+          startLocalPresence();
           loadRoomTitleAndRender();
         } else if (view === 'settings') {
-          stopLocalPresence();
           DOM.btnBack.style.visibility = 'visible';
           DOM.btnToSettings.style.visibility = 'hidden';
           DOM.titleText.textContent = '接続キー設定';
@@ -1279,6 +1320,9 @@
         const isMe = msg.sender === getSessionUser();
         const msgDiv = document.createElement('div');
         msgDiv.className = 'msg ' + (isMe ? 'me' : 'other');
+        
+        // 既読データを正確に取り出しマッピングするためのIDをバインド
+        msgDiv.setAttribute('data-msgid', msg.id);
 
         if (!isMe) {
           const senderName = document.createElement('div');
@@ -1300,8 +1344,9 @@
         const readStatus = document.createElement('div');
         readStatus.className = 'msg-read-status';
         
+        // 初期既読ステータスの読み込み（永続ローカルメモリから最新の値を読み出す）
         if (isMe) {
-          let count = msg.readCount || 0;
+          let count = getMessageReadCountLocal(msg.id);
           if (supabaseClient) {
             count = Math.max(count, roomPresenceMembers.filter(member => member !== getSessionUser()).length);
           } else {
@@ -1476,7 +1521,7 @@
             renderMessages();
           }
         }
-        // 他タブからのアクティビティ更新（既読同期）を検知する
+        // 他タブからのアクティビティ更新（既読同期）を検知
         if (e.key === ACTIVE_USERS_KEY) {
           updateReadReceipts();
         }
@@ -2066,7 +2111,7 @@
       animation: slideToDiscardFromOpp 0.3s cubic-bezier(0.25, 1, 0.5, 1) forwards;
     }
   </style>
-  \x3Cscript src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"\x3E\x3C/script\x3E
+  \x3Cscript src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"\x3E\x3C\x2Fscript\x3E
 </head>
 <body>
 
@@ -2255,7 +2300,7 @@
             DOM.btnDraw.style.pointerEvents = 'none';
             DOM.btnDraw.style.opacity = '0.5';
           } else {
-            DOM.statusBar.textContent = "🟢 あなたの手番です。場札に合うカードを出すか、山札から引いてください。";
+            DOM.statusBar.textContent = "🟢 あなたの手番です。場札に合うカードを出すか、山札から引してください。";
             DOM.btnDraw.style.pointerEvents = 'auto';
             DOM.btnDraw.style.opacity = '1';
           }
@@ -3010,7 +3055,7 @@
 
   function openTab(url) {
     const id = ++idCounter;
-    // タイポ（fontIdx）を正規の履歴インデックス変数（histIdx）に修復
+    // 履歴管理用変数のタイポを完全に修正 (histIdx)
     const tab = { id: id, title: "新しいタブ", favicon: "🌐", url: null, history: [], histIdx: -1 };
     tabs.push(tab);
     const ntPage = buildNTPage(id);
