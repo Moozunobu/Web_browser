@@ -143,6 +143,62 @@
     }
     #url-bar-go:hover { color: var(--accent); }
 
+    /* ─── 検索補助ツールバーのスタイル ─── */
+    #search-tools {
+      display: none; /* 初期は非表示 */
+      align-items: center;
+      gap: 6px;
+      margin-left: 8px;
+      margin-right: 4px;
+      flex-shrink: 0;
+    }
+    .search-tool-btn {
+      border: none;
+      padding: 6px 16px;
+      height: 28px;
+      font-size: 12px;
+      font-weight: bold;
+      cursor: pointer;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background-color 0.15s, opacity 0.15s;
+    }
+    .search-tool-btn:hover {
+      opacity: 0.85;
+    }
+    /* すべて・画像・動画ボタンは黒ベース（スクリーンショットに準拠） */
+    #btn-search-all, #btn-search-images, #btn-search-videos {
+      background: #000000;
+      color: #ffffff;
+    }
+    /* 検索窓風ボタンはグレーベース */
+    #btn-search-focus {
+      background: #1c1b22;
+      color: #ffffff;
+      border: 1px solid var(--border);
+    }
+    /* アクティブ化されたボタンは青（すべて が初期選択） */
+    .search-tool-btn.active {
+      background: var(--accent) !important;
+      color: #ffffff !important;
+    }
+
+    .theme-light .search-tool-btn {
+      background: #e3e3e3;
+      color: #15141a;
+      border: 1px solid var(--border);
+    }
+    .theme-light #btn-search-focus {
+      background: #ffffff !important;
+      color: #15141a !important;
+    }
+    .theme-light .search-tool-btn.active {
+      background: var(--accent) !important;
+      color: #ffffff !important;
+    }
+
     /* ─── コアコンテンツ領域 (左右分割対応型) ─── */
     #content-area {
       flex: 1; display: flex; flex-direction: row; min-height: 0;
@@ -327,7 +383,7 @@
 
     /* ─── エラーページ (iOS互換絶対配置型) ─── */
     .error-page {
-      position: absolute; inset: 0; width: 100%; height: 100%; background: var(--ntpage-bg); display: none;
+      width: 100%; height: 100%; flex: 1; background: var(--ntpage-bg); display: none;
       flex-direction: column; align-items: center; justify-content: center; gap: 20px;
       color: var(--text-main); text-align: center; padding: 40px;
     }
@@ -363,7 +419,13 @@
         <span id="url-bar-lock">🔒</span>
         <input id="url-bar" type="text" autocomplete="off" spellcheck="false" placeholder="URLを入力" />
       </div>
-      <!-- 左右分割画面ボタンは非表示（ゲーム時に自動で画面分割されるため） -->
+      <!-- 補助検索ツール用のコンテナ領域 -->
+      <div id="search-tools">
+        <button class="search-tool-btn" id="btn-search-focus">🔍 検索</button>
+        <button class="search-tool-btn" id="btn-search-all">すべて</button>
+        <button class="search-tool-btn" id="btn-search-images">画像</button>
+        <button class="search-tool-btn" id="btn-search-videos">動画</button>
+      </div>
       <button class="nav-btn" id="btn-console" title="開発コンソール">&#128295;</button>
       <button class="nav-btn" id="btn-settings" title="設定">&#9881;</button>
     </div>
@@ -560,7 +622,7 @@
 `;
 
   // ─── [We talks チャットアプリ] 仮想ソースコードの定義 ───────────────────────
-  // スラッシュ「/」部分を完全に16進数エンコードした「\x3C\x2Fscript\x3E」に統一することで、iPadOS/Safariのコンパイルクラッシュを完全に根絶
+  // ブラウザのHTMLパーサによる誤認識を避けるため、すべてのscript閉じタグを「\x3C\x2Fscript\x3E」(スラッシュもエスケープ)で完全安全記述
   const CHAT_APP_HTML = `
 <!DOCTYPE html>
 <html lang="ja">
@@ -1102,18 +1164,20 @@
         DOM.viewSettings.style.display = (view === 'settings') ? 'flex' : 'none';
 
         if (view === 'lobby') {
+          stopLocalPresence();
           DOM.btnBack.style.visibility = 'hidden';
           DOM.btnToSettings.style.visibility = 'visible';
           DOM.titleText.textContent = 'We talks';
           activeRoomId = null;
           renderLobby();
         } else if (view === 'chat') {
+          startLocalPresence();
           DOM.btnBack.style.visibility = 'visible';
           DOM.btnToSettings.style.visibility = 'hidden';
           unreadCounts[activeRoomId] = 0;
-          startLocalPresence();
           loadRoomTitleAndRender();
         } else if (view === 'settings') {
+          stopLocalPresence();
           DOM.btnBack.style.visibility = 'visible';
           DOM.btnToSettings.style.visibility = 'hidden';
           DOM.titleText.textContent = '接続キー設定';
@@ -1521,7 +1585,7 @@
             renderMessages();
           }
         }
-        // 他タブからのアクティビティ更新（既読同期）を検知
+        // 他タブからのアクティビティ更新（既読同期）を検知する
         if (e.key === ACTIVE_USERS_KEY) {
           updateReadReceipts();
         }
@@ -1621,7 +1685,7 @@
     
     .game-status-bar { padding: 8px; background: rgba(0,0,0,0.15); border-radius: 6px; font-size: 13px; text-align: center; font-weight: bold; }
   </style>
-  \x3Cscript src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"\x3E\x3C/script\x3E
+  \x3Cscript src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"\x3E\x3C\x2Fscript\x3E
 </head>
 <body>
 
@@ -2111,7 +2175,7 @@
       animation: slideToDiscardFromOpp 0.3s cubic-bezier(0.25, 1, 0.5, 1) forwards;
     }
   </style>
-  \x3Cscript src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"\x3E\x3C\x2Fscript\x3E
+  \x3Cscript src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"\x3E\x3C/script\x3E
 </head>
 <body>
 
@@ -2300,7 +2364,7 @@
             DOM.btnDraw.style.pointerEvents = 'none';
             DOM.btnDraw.style.opacity = '0.5';
           } else {
-            DOM.statusBar.textContent = "🟢 あなたの手番です。場札に合うカードを出すか、山札から引してください。";
+            DOM.statusBar.textContent = "🟢 あなたの手番です。場札に合うカードを出すか、山札から引いてください。";
             DOM.btnDraw.style.pointerEvents = 'auto';
             DOM.btnDraw.style.opacity = '1';
           }
@@ -2392,7 +2456,7 @@
 
       // 山札からカードを引く
       function drawCard() {
-        if (!isMyTurn) return;
+        if (!isMyTurn || stackedValue !== null) return;
         myHand.push(createRandomCard());
         
         // カードを引いたアニメーションをセット
@@ -2712,14 +2776,14 @@
         const activeTab = tabs.find(t => t.id === activeId);
         if (!activeTab || !activeTab.url) return void writeToConsole("エラー: 現在有効なWebページが開かれていません。", true);
         const bookmarks = getBookmarks();
-        if (bookmarks.some(b => b.url === activeTab.url)) return void writeToConsole(`案内: すでに登録されています: ${activeTab.title}`);
+        if (bookmarks.some(b => b.url === activeTab.url)) return void writeToConsole("案内: すでに登録されています: " + activeTab.title);
         bookmarks.push({ label: activeTab.title, url: activeTab.url, icon: getFavicon(activeTab.url) });
         saveBookmarks(bookmarks);
         DOMElements.contentEl.querySelectorAll(".nt-page").forEach(page => {
           const tid = +page.getAttribute("data-tabid");
           renderShortcuts(page, tid);
         });
-        writeToConsole(`成功: お気に入りに追加しました: "${activeTab.title}"`);
+        writeToConsole("成功: お気に入りに追加しました: 「" + activeTab.title + "」");
     } else if (cmd === 'view-source') {
         const activeTab = tabs.find(t => t.id === activeId);
         if (!activeTab || !activeTab.url) return void writeToConsole("エラー: 開いているWebページがありません。", true);
@@ -2742,7 +2806,7 @@
     } else if (cmd === 'help command ? -a') {
         writeToConsole(`使用可能なコマンド:\n  This web in my book   - 現在のページをお気に入りに追加\n  view-source           - 現在ページのソースコードを表示 (CORS制限あり)\n  this browser-version  - バージョン情報を表示\n  clear                 - コンソール画面をクリア\n  Help command ? -a     - このヘルプメッセージを表示`);
     } else {
-      writeToConsole(`エラー: 未知のコマンド "${cmd}" です。コマンド一覧を調べるには 'Help command ? -a' と入力してください。`, true);
+      writeToConsole("エラー: 未知のコマンド「" + cmd + "」です。'Help command ? -a' と入力してください。", true);
     }
     DOMElements.consoleInput.value = '';
   }
@@ -3055,7 +3119,7 @@
 
   function openTab(url) {
     const id = ++idCounter;
-    // 履歴管理用変数のタイポを完全に修正 (histIdx)
+    // タイポを完全に修正し、インデックス変数を histIdx にバインド
     const tab = { id: id, title: "新しいタブ", favicon: "🌐", url: null, history: [], histIdx: -1 };
     tabs.push(tab);
     const ntPage = buildNTPage(id);
