@@ -1,0 +1,3228 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Browser v2</title>
+  <style>
+    /* ─── 変数定義 (Firefox Proton UI) ─── */
+    :root {
+      --shell-bg:      #1c1b22;       /* Inactive Tab area */
+      --tabbar-bg:     #1c1b22;
+      --tab-idle:      transparent;
+      --tab-hover:     rgba(255, 255, 255, 0.08);
+      --tab-active:    #2b2a33;       /* Active Tab (matches toolbar) */
+      --toolbar-bg:    #2b2a33;       /* Main Toolbar */
+      --border:        rgba(255, 255, 255, 0.15);
+      --text-main:     #fbfbfe;
+      --text-muted:    #fbfbfe;
+      --text-dim:      #94949b;
+      --accent:        #0060df;       /* Firefox Blue */
+      --urlbar-bg:     #1c1b22;
+      --ntpage-bg:     #2b2a33;
+      --shortcut-bg:   rgba(255, 255, 255, 0.05);
+      --search-bg:     #1c1b22;
+      --console-bg:    #1c1b22;
+      --font-size-main: 13px;
+      --font-size-small: 12px;
+    }
+    :root.theme-light {
+      --shell-bg:      #e3e3e3;
+      --tabbar-bg:     #e3e3e3;
+      --tab-idle:      transparent;
+      --tab-hover:     rgba(0, 0, 0, 0.07);
+      --tab-active:    #f9f9fb;
+      --toolbar-bg:    #f9f9fb;
+      --border:        rgba(0, 0, 0, 0.15);
+      --text-main:     #15141a;
+      --text-muted:    #15141a;
+      --text-dim:      #5b5b66;
+      --accent:        #0060df;
+      --urlbar-bg:     #ffffff;
+      --ntpage-bg:     #f9f9fb;
+      --shortcut-bg:   rgba(0, 0, 0, 0.03);
+      --search-bg:     #ffffff;
+      --console-bg:    #ffffff;
+    }
+    body[data-font-size="small"] { --font-size-main: 12px; --font-size-small: 11px; }
+    body[data-font-size="large"] { --font-size-main: 14px; --font-size-small: 13px; }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%; height: 100dvh; overflow: hidden; position: fixed;
+      width: 100%; top: 0; left: 0; background: var(--shell-bg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text-main); font-size: var(--font-size-main);
+    }
+
+    /* ─── 基本レイアウト ─── */
+    #browser {
+      display: flex; flex-direction: column; height: 100%;
+      width: 100%; position: relative; overflow: hidden;
+    }
+    #main-panel {
+      display: flex; flex-direction: column; flex: 1; min-height: 0;
+    }
+
+    /* ─── 水平タブバー (Firefox Floating Tab) ─── */
+    #tab-bar {
+      display: flex; align-items: center; background: var(--tabbar-bg);
+      padding: 4px 8px 0; gap: 4px; min-height: 44px;
+      overflow-x: auto; overflow-y: hidden; scrollbar-width: none; flex-shrink: 0;
+    }
+    #tab-bar::-webkit-scrollbar { display: none; }
+    .tab {
+      display: flex; align-items: center; gap: 8px; padding: 0 10px;
+      min-width: 140px; max-width: 240px; height: 34px;
+      background: var(--tab-idle); border-radius: 4px;
+      cursor: pointer; font-size: var(--font-size-small); color: var(--text-dim);
+      user-select: none; position: relative; flex-shrink: 0;
+      transition: background-color 0.1s, color 0.1s;
+      border: none; margin-bottom: 4px;
+    }
+    .tab:hover { background: var(--tab-hover); color: var(--text-main); }
+    .tab.active { background: var(--tab-active); color: var(--text-main); z-index: 2; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+    .tab.active::after { display: none !important; }
+    .tab-favicon { font-size: 14px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+    .tab-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ─── 垂直タブバー ─── */
+    body.layout-vertical #browser { flex-direction: row; }
+    body.layout-vertical #tab-bar {
+      flex-direction: column; width: 240px; height: 100%;
+      align-items: stretch; padding: 8px; border-right: 1px solid var(--border); gap: 4px;
+    }
+    body.layout-vertical .tab {
+      max-width: none; min-width: 0; border-radius: 4px; margin-bottom: 0; height: 36px;
+    }
+    body.layout-vertical .tab.active::after { display: none; }
+
+    .tab-close {
+      width: 16px; height: 16px; border-radius: 2px; display: flex; align-items: center;
+      justify-content: center; font-size: 10px; color: var(--text-dim); cursor: pointer;
+      flex-shrink: 0; transition: background-color 0.1s, color 0.1s; line-height: 1; margin-left: auto;
+    }
+    .tab-close:hover { background: rgba(255,255,255,0.15); color: var(--text-main); }
+    .theme-light .tab-close:hover { background: rgba(0,0,0,0.08); }
+
+    #new-tab-btn {
+      width: 28px; height: 28px; background: transparent; border: none; border-radius: 4px;
+      color: var(--text-main); font-size: 18px; cursor: pointer; display: flex; align-items: center;
+      justify-content: center; flex-shrink: 0; transition: background-color 0.1s, color 0.1s;
+      align-self: center; margin-bottom: 4px; line-height: 1;
+    }
+    #new-tab-btn:hover { background: var(--tab-hover); }
+    body.layout-vertical #new-tab-btn { width: 100%; height: 36px; margin-top: 4px; margin-bottom: 0; }
+
+    /* ─── ツールバー ─── */
+    #toolbar {
+      background: var(--toolbar-bg); padding: 6px 8px; display: flex;
+      align-items: center; gap: 6px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    .nav-btn {
+      width: 28px; height: 28px; background: transparent; border: none; border-radius: 4px;
+      color: var(--text-main); font-size: 14px; cursor: pointer; display: flex;
+      align-items: center; justify-content: center; transition: background-color 0.15s; flex-shrink: 0;
+    }
+    .nav-btn:hover:not(:disabled) { background: var(--tab-hover); }
+    .nav-btn:disabled { color: var(--text-dim); cursor: default; opacity: 0.3; }
+
+    #url-bar-wrap { flex: 1; position: relative; display: flex; align-items: center; }
+    #url-bar {
+      width: 100%; height: 32px; background: var(--urlbar-bg);
+      border: 1px solid transparent; border-radius: 4px; padding: 0 36px;
+      color: var(--text-main); font-size: var(--font-size-main); font-family: inherit;
+      outline: none; transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
+    }
+    #url-bar:hover { background-color: color-mix(in srgb, var(--urlbar-bg) 85%, var(--text-main) 15%); }
+    #url-bar:focus { border-color: var(--accent); background: var(--urlbar-bg); box-shadow: 0 0 0 2px rgba(0, 96, 223, 0.4); }
+    #url-bar-lock { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 14px; color: var(--text-dim); pointer-events: none; display: flex; align-items: center; }
+    #url-bar-go {
+      position: absolute; right: 8px; background: none; border: none; color: var(--text-dim);
+      cursor: pointer; font-size: 16px; padding: 0; transition: color 0.1s;
+    }
+    #url-bar-go:hover { color: var(--accent); }
+
+    /* ─── コアコンテンツ領域 (左右分割対応型) ─── */
+    #content-area {
+      flex: 1; display: flex; flex-direction: row; min-height: 0;
+      position: relative; overflow: hidden; background: var(--shell-bg);
+    }
+    #left-pane {
+      flex: 1; height: 100%; position: relative; min-width: 0;
+    }
+    #right-pane {
+      width: 50%; /* Chrome同様、50:50の比率に設定 */
+      border-left: 1px solid var(--border); display: none;
+      height: 100%; background: var(--shell-bg); position: relative;
+    }
+    
+    /* 画面分割時に左側を確実に50%幅に抑制 */
+    body.split-active #left-pane {
+      width: 50%; flex: none;
+    }
+    body.split-active #right-pane {
+      display: flex;
+    }
+
+    /* iframe等、見切れバグを完全に抑制する絶対配置 */
+    .page-frame {
+      position: absolute; inset: 0; width: 100%; height: 100%; border: none; display: none;
+    }
+    .page-frame.active {
+      display: block;
+    }
+
+    /* ─── 新規タブページ (Firefox Home Style & iOS互換Flex化) ─── */
+    .nt-page {
+      position: absolute; inset: 0; width: 100%; height: 100%; background: var(--ntpage-bg); display: none;
+      flex-direction: column; align-items: center; justify-content: center; gap: 24px;
+    }
+    .nt-page.active { display: flex; }
+    .nt-heading { display: none !important; }
+    
+    /* 検索カテゴリボタン用のスタイル (Firefox Pill Buttons) */
+    .nt-categories {
+      display: flex; gap: 10px; justify-content: center; margin-bottom: 4px;
+    }
+    .nt-cat-btn {
+      background: rgba(255, 255, 255, 0.1); color: var(--text-main); border: none;
+      padding: 8px 24px; font-size: 14px; font-weight: 500; cursor: pointer;
+      transition: background-color 0.15s, color 0.15s; border-radius: 20px;
+    }
+    .nt-cat-btn:hover { background: rgba(255, 255, 255, 0.18); }
+    .nt-cat-btn.active { background: var(--accent); color: #ffffff; }
+
+    .theme-light .nt-cat-btn { background: rgba(0, 0, 0, 0.06); color: var(--text-main); }
+    .theme-light .nt-cat-btn:hover { background: rgba(0, 0, 0, 0.12); }
+    .theme-light .nt-cat-btn.active { background: var(--accent); color: #ffffff; }
+
+    .nt-search-wrap { position: relative; width: 560px; max-width: 90%; }
+    .nt-search-icon {
+      position: absolute; left: 16px; top: 50%; transform: translateY(-50%);
+      font-size: 18px; color: var(--text-dim); pointer-events: none;
+    }
+    .nt-search {
+      width: 100%; height: 48px; background: var(--search-bg); border: 1px solid var(--border);
+      border-radius: 8px; padding: 0 18px 0 48px; color: var(--text-main);
+      font-size: 14px; font-family: inherit; outline: none; box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .theme-light .nt-search { box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
+    .nt-search:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0, 96, 223, 0.3); }
+    .nt-hint { display: none !important; }
+    
+    /* ─── ショートカット（お気に入り）と削除ボタン ─── */
+    .shortcuts {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+      gap: 16px; width: 560px; max-width: 90%; justify-content: center;
+    }
+    .shortcut { display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; transition: transform 0.12s; width: 80px; position: relative; }
+    .shortcut:hover { transform: none; }
+    .shortcut-icon {
+      width: 64px; height: 64px; background: var(--shortcut-bg); border-radius: 8px;
+      display: flex; align-items: center; justify-content: center; font-size: 28px;
+      border: none; box-shadow: 0 1px 3px rgba(0,0,0,0.1); transition: background-color 0.12s, box-shadow 0.12s;
+    }
+    .shortcut:hover .shortcut-icon { background: var(--tab-hover); box-shadow: 0 3px 8px rgba(0,0,0,0.2); }
+    .shortcut-label {
+      font-size: 12px; color: var(--text-main); text-align: center; width: 100%;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
+    /* お気に入り削除ボタン (×) のスタイル（PCホバー対応 ＆ iPad向け不透明度最適化） */
+    .shortcut-delete-btn {
+      position: absolute;
+      top: -2px; right: 4px;
+      width: 18px; height: 18px;
+      background: #ff3b30; color: white; border: none;
+      border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: bold; cursor: pointer; line-height: 1; z-index: 10;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .shortcut-delete-btn:hover {
+      transform: scale(1.1); background: #e02d24;
+    }
+    @media (hover: hover) {
+      /* PC（マウス環境）: ホバー時のみ表示 */
+      .shortcut-delete-btn { opacity: 0; }
+      .shortcut:hover .shortcut-delete-btn { opacity: 1; }
+    }
+    @media (hover: none) {
+      /* iPad・スマホ（タッチ環境）: 最初から少し見せておき、簡単にタップできるようにする */
+      .shortcut-delete-btn { opacity: 0.7; }
+    }
+
+    /* ─── 設定パネル ─── */
+    #settings-panel {
+      position: absolute; top: 0; right: 0; width: 320px; height: 100%;
+      background: var(--toolbar-bg); border-left: 1px solid var(--border);
+      z-index: 300; display: flex; flex-direction: column;
+      transform: translateX(100%); transition: transform 0.2s cubic-bezier(0.075, 0.82, 0.165, 1);
+      box-shadow: -2px 0 12px rgba(0,0,0,0.2);
+    }
+    #settings-panel.active { transform: translateX(0); }
+    .settings-header {
+      padding: 16px; border-bottom: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: center;
+      flex-shrink: 0;
+    }
+    .settings-title { font-weight: 600; font-size: 14px; }
+    .settings-close { font-size: 24px; cursor: pointer; color: var(--text-dim); line-height: 1; }
+    .settings-close:hover { color: var(--text-main); }
+    .settings-body { flex: 1; overflow-y: auto; padding: 16px; }
+    .setting-group { margin-bottom: 24px; }
+    .setting-group-title { font-weight: 600; font-size: 11px; color: var(--text-dim); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .setting-option { display: flex; flex-direction: column; gap: 10px; }
+    .setting-option label { display: flex; align-items: center; gap: 10px; font-size: var(--font-size-main); cursor: pointer; user-select: none; }
+    
+    .setting-option input[type="radio"] {
+      appearance: none; background-color: transparent; margin: 0; font: inherit;
+      color: var(--accent); width: 16px; height: 16px; border: 1.5px solid var(--text-dim);
+      border-radius: 50%; display: grid; place-content: center; cursor: pointer;
+    }
+    .setting-option input[type="radio"]::before {
+      content: ""; width: 8px; height: 8px; border-radius: 50%;
+      transform: scale(0); transition: 120ms transform ease-in-out; background-color: var(--accent);
+    }
+    .setting-option input[type="radio"]:checked { border-color: var(--accent); }
+    .setting-option input[type="radio"]:checked::before { transform: scale(1); }
+
+    .setting-option select {
+      width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--border);
+      background: var(--urlbar-bg); color: var(--text-main); font-family: inherit; outline: none;
+    }
+    .setting-option select:focus { border-color: var(--accent); }
+
+    /* ─── コマンドライン ─── */
+    #console-panel {
+      position: absolute; bottom: 0; left: 0; right: 0; height: 240px; background: #1c1b22;
+      border-top: 1px solid var(--border); display: none; flex-direction: column;
+      font-family: 'Courier New', Courier, monospace; color: #f5f6f7; flex-shrink: 0; z-index: 200;
+    }
+    #console-panel.active { display: flex; }
+    #console-header { background: #2b2a33; padding: 8px 12px; font-size: 12px; color: #f5f6f7; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); }
+    #console-title { font-weight: 700; }
+    #console-close { cursor: pointer; font-size: 18px; color: var(--text-dim); }
+    #console-close:hover { color: var(--text-main); }
+    #console-body { flex: 1; padding: 12px; overflow-y: auto; font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
+    #console-footer { display: flex; border-top: 1px solid var(--border); background: #2b2a33; align-items: center; }
+    #console-prompt { padding-left: 12px; color: #3582e1; font-size: 13px; font-weight: bold; user-select: none; }
+    #console-input { flex: 1; background: transparent; border: none; color: #f5f6f7; padding: 10px 6px; font-family: inherit; font-size: 13px; outline: 0; }
+    #console-run-btn { background: var(--accent); border: none; color: #fff; padding: 0 18px; height: 38px; cursor: pointer; font-family: inherit; font-size: 12px; transition: background-color .1s; }
+    #console-run-btn:hover { background: #004cb6; color: #fff; }
+
+    .theme-light #console-panel { background: #ffffff; border-top-color: var(--border); color: #15141a; }
+    .theme-light #console-header { background: #f0f0f4; border-bottom-color: var(--border); color: #15141a; }
+    .theme-light #console-footer { background: #f0f0f4; border-top-color: var(--border); }
+    .theme-light #console-prompt { color: #0060df; }
+    .theme-light #console-input { color: #15141a; }
+    .theme-light #console-run-btn { background: #0060df; }
+    .theme-light #console-run-btn:hover { background: #004cb6; }
+
+    /* ─── エラーページ (iOS互換絶対配置型) ─── */
+    .error-page {
+      position: absolute; inset: 0; width: 100%; height: 100%; background: var(--ntpage-bg); display: none;
+      flex-direction: column; align-items: center; justify-content: center; gap: 20px;
+      color: var(--text-main); text-align: center; padding: 40px;
+    }
+    .error-page.active { display: flex; }
+    .error-page .err-icon {
+      font-size: 48px; background: rgba(251, 74, 74, 0.1); border-radius: 50%;
+      width: 80px; height: 80px; display: flex; align-items: center; justify-content: center;
+    }
+    .error-page .err-title { font-size: 22px; font-weight: 600; color: var(--text-main); }
+    .error-page .err-desc { font-size: 14px; line-height: 1.6; max-width: 480px; color: var(--text-dim); }
+    .error-page .err-retry {
+      margin-top: 12px; padding: 8px 24px; background: var(--accent); border: none;
+      border-radius: 4px; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer;
+      transition: background-color 0.15s; font-family: inherit;
+    }
+    .error-page .err-retry:hover { background: #004cb6; }
+  </style>
+</head>
+<body>
+
+<div id="browser" role="application">
+
+  <div id="tab-bar" role="tablist">
+    <button id="new-tab-btn" title="新しいタブ">+</button>
+  </div>
+
+  <div id="main-panel">
+    <div id="toolbar">
+      <button class="nav-btn" id="btn-back" title="戻る" disabled>&#8592;</button>
+      <button class="nav-btn" id="btn-fwd" title="進む" disabled>&#8594;</button>
+      <button class="nav-btn" id="btn-reload" title="再読み込み">&#8635;</button>
+      <div id="url-bar-wrap">
+        <span id="url-bar-lock">🔒</span>
+        <input id="url-bar" type="text" autocomplete="off" spellcheck="false" placeholder="URLを入力" />
+      </div>
+      <!-- 左右分割画面ボタンは非表示（ゲーム時に自動で画面分割されるため） -->
+      <button class="nav-btn" id="btn-console" title="開発コンソール">&#128295;</button>
+      <button class="nav-btn" id="btn-settings" title="設定">&#9881;</button>
+    </div>
+
+    <!-- コンテンツエリア（左側：ページ画面、右側：スプリット用チャットアプリ） -->
+    <div id="content-area" role="main">
+      <div id="left-pane">
+        <div id="loading-bar"></div>
+      </div>
+      <div id="right-pane">
+        <!-- 画面分割時にチャットアプリを埋め込むための専用iframe -->
+        <iframe id="split-chat-frame" style="width: 100%; height: 100%; border: none;"></iframe>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 設定パネル -->
+<div id="settings-panel">
+  <div class="settings-header">
+    <span class="settings-title" data-i18n="settings.title">設定</span>
+    <span class="settings-close">&times;</span>
+  </div>
+  <div class="settings-body">
+    <div class="setting-group">
+      <div class="setting-group-title" data-i18n="settings.theme.title">テーマ</div>
+      <div class="setting-option">
+        <label><input type="radio" name="theme" value="dark" checked> <span data-i18n="settings.theme.dark">ダーク</span></label>
+        <label><input type="radio" name="theme" value="light"> <span data-i18n="settings.theme.light">ライト</span></label>
+      </div>
+    </div>
+    <div class="setting-group">
+      <div class="setting-group-title" data-i18n="settings.layout.title">タブバーの配置</div>
+      <div class="setting-option">
+        <label><input type="radio" name="tab-layout" value="horizontal" checked> <span data-i18n="settings.layout.horizontal">水平 (上)</span></label>
+        <label><input type="radio" name="tab-layout" value="vertical"> <span data-i18n="settings.layout.vertical">垂直 (左)</span></label>
+      </div>
+    </div>
+    <div class="setting-group">
+      <div class="setting-group-title" data-i18n="settings.language.title">言語</div>
+      <div class="setting-option">
+        <select id="language-select">
+          <option value="ja">日本語</option>
+          <option value="en">English</option>
+        </select>
+      </div>
+    </div>
+    <div class="setting-group">
+      <div class="setting-group-title" data-i18n="settings.fontsize.title">文字の大きさ</div>
+      <div class="setting-option">
+        <label><input type="radio" name="font-size" value="small"> <span data-i18n="settings.fontsize.small">小</span></label>
+        <label><input type="radio" name="font-size" value="medium" checked> <span data-i18n="settings.fontsize.medium">中</span></label>
+        <label><input type="radio" name="font-size" value="large"> <span data-i18n="settings.fontsize.large">大</span></label>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- コマンドコンソール -->
+<div id="console-panel">
+  <div class="settings-header">
+    <span class="settings-title">出力結果</span>
+    <span class="settings-close">&times;</span>
+  </div>
+  <div id="console-body"></div>
+  <div id="console-footer">
+    <span id="console-prompt">&gt;</span>
+    <input id="console-input" type="text" autocomplete="off" spellcheck="false" placeholder="コマンドを入力..." />
+    <button id="console-run-btn">実行</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  
+  const BROWSER_VERSION = 'v2';
+
+  // ─── [取扱説明書ガイド] 仮想ソースコードの定義 ──────────────────────────────────
+  // ガイド内のインラインコード装飾用バッククォートを、競合を避けるために <code> タグに全面置換
+  const GUIDE_PAGE_HTML = `
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>取扱説明書マニュアル</title>
+  <style>
+    :root {
+      --bg: #1c1b22;
+      --panel: #2b2a33;
+      --accent: #0060df;
+      --text: #fbfbfe;
+      --text-dim: #94949b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg); color: var(--text); padding: 24px; line-height: 1.6; overflow-y: auto;
+    }
+    .wrapper { max-width: 720px; margin: 0 auto; }
+    .header { text-align: center; margin-bottom: 32px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 16px; }
+    .header h1 { font-size: 24px; font-weight: bold; margin-bottom: 8px; }
+    .header p { color: var(--text-dim); font-size: 14px; }
+    
+    .card { background: var(--panel); border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.15); }
+    .card-title { font-size: 18px; font-weight: bold; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 6px; }
+    
+    ul { padding-left: 20px; margin-bottom: 12px; }
+    li { margin-bottom: 6px; }
+    strong { color: #ffeb3b; }
+    
+    details { background: rgba(0,0,0,0.2); border-radius: 6px; padding: 10px; margin-top: 10px; cursor: pointer; }
+    summary { font-weight: bold; font-size: 14px; outline: none; user-select: none; }
+    details p { font-size: 13px; color: var(--text-dim); margin-top: 8px; padding-left: 8px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    
+    <div class="header">
+      <h1>ℹ️ Browser v2 総合取扱説明書</h1>
+      <p>プレインストールされた各機能やオンラインゲームの接続方法をご案内します</p>
+    </div>
+
+    <!-- 1. 基本操作 -->
+    <div class="card">
+      <div class="card-title">🌐 ブラウザの基本操作</div>
+      <ul>
+        <li><strong>アドレスバー:</strong> 検索ワードを入力してEnterを押すと <strong>Bing</strong> で検索します。URLを入力して直接ページを開くことも可能です。</li>
+        <li><strong>履歴の戻る/進む (← / →):</strong> タブごとの閲覧履歴を行き来することができます。</li>
+        <li><strong>新規タブ (+):</strong> 複数のタブを同時に起動して使い分けられます。</li>
+      </ul>
+    </div>
+
+    <!-- 2. 自動画面分割 -->
+    <div class="card">
+      <div class="card-title">◫ ゲーム連動・自動画面分割（50:50スプリット）</div>
+      <ul>
+        <li>ヨットゲーム（🎲）やUNOゲーム（🃏）を新規起動、またはタブ切り替えした瞬間に、**自動的に画面がChrome同様の「50:50」に2分割**されます。</li>
+        <li>画面左側にゲーム本体、画面右側にチャットアプリ（We talks）が自動バインドされ、ゲームを遊んでいる間だけシームレスにチャットが常駐する設計になっています。</li>
+        <li>Wikipediaなどの通常Webサイトを閲覧する、またはこの取扱説明書を読んでいる間は分割は発生せず、広々と全面表示されます。</li>
+      </ul>
+    </div>
+
+    <!-- 3. We talks の使い方 -->
+    <div class="card">
+      <div class="card-title">💬 We talks（チャットアプリ）</div>
+      <ul>
+        <li><strong>IP連動ユーザー名:</strong> We talksを開くと、接続環境（IPアドレス）に基づいて自動で名前（例：ユーザー2944）が割り振られます。</li>
+        <li><strong>かんたんユーザー名変更:</strong> トーク一覧の右上に表示されているご自身の名前（緑色）をタップするだけで、パスキーなしで自由に名前変更ができます。一度変更すると同じIP環境であればブラウザを閉じても次回から名前が自動で引き継がれます。</li>
+        <li><strong>管理者キー設定:</strong> ⚙ボタンのSupabase設定の変更は、セキュアに管理するためパスキー <strong>「mozunbu_1203」</strong> でロックされています。</li>
+      </ul>
+    </div>
+
+    <!-- 4. 各種ゲームの対戦手順 -->
+    <div class="card">
+      <div class="card-title">🎲 プレインストールゲーム（ヨット・UNO）</div>
+      <p>いずれのゲームも「ソロプレイ（またはAI対戦）」と「オンライン対戦（他プレイヤーと同期）」に対応しています。</p>
+      
+      <details>
+        <summary>🎲 ヨット（ダイスゲーム）の遊び方</summary>
+        <p>5つのサイコロを振り、最大3回のロールの中で「フルハウス」や「ストレート」などの役を揃えて得点を競う人気ゲームです。</p>
+        <p><strong>オンライン対戦手順:</strong><br>
+        1. ロビー画面で、対戦相手と事前に決めた任意の「部屋コード（例：777）」を入力します。<br>
+        2. 「部屋に入る / 作成」をタップします。<br>
+        3. 相手も同じ部屋コードで入室すると、リアルタイムに対戦同期が開始されます。</p>
+      </details>
+
+      <details>
+        <summary>🃏 UNO（カードゲーム）の遊び方</summary>
+        <p>手札を場札の「色」か「数字」に合わせて出していき、最初に手札が0枚になったプレイヤーが勝利する大人気カードゲームです。</p>
+        <p><strong>オンライン対戦手順:</strong><br>
+        1. ヨットと同様に、対戦相手と「部屋コード（例：888）」を決めて入力欄に入力します。<br>
+        2. 「部屋に入る」を押して入室し、相手の接続が完了すると、手札を互いに同期してリアルタイム対戦が開始されます。</p>
+      </details>
+    </div>
+
+    <!-- 5. デベロッパー機能 -->
+    <div class="card" style="margin-bottom: 40px;">
+      <div class="card-title">🛠 デベロッパーコマンド</div>
+      <ul>
+        <li>ツールバーの <strong>🔧ボタン</strong> または <strong>F12キー</strong> を押すとデベロッパーコンソールが立ち上がります。以下のコマンドを入力して実行可能です。</li>
+        <li><code>this web in my book</code> : 現在開いているWebページをお気に入り（ショートカット）に追加します。</li>
+        <li><code>view-source</code> : 現在ページのHTMLソースを表示します。</li>
+        <li><code>clear</code> : ログ画面をきれいに掃除します。</li>
+        <li><code>help command ? -a</code> : コマンドヘルプを表示します。</li>
+      </ul>
+    </div>
+
+  </div>
+</body>
+</html>
+`;
+
+  // ─── [We talks チャットアプリ] 仮想ソースコードの定義 ───────────────────────
+  const CHAT_APP_HTML = `
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    :root {
+      --line-green: #06C755;
+      --chat-bg: #8cabd9;
+      --text-color: #1e1e1e;
+      --light-gray: #f4f4f4;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+      display: flex; flex-direction: column; background: #fff; color: var(--text-color); overflow: hidden;
+    }
+    
+    /* ─── ヘッダー ─── */
+    .header {
+      background: var(--line-green); color: white; padding: 12px 16px;
+      display: flex; align-items: center; justify-content: space-between; font-weight: bold; flex-shrink: 0;
+    }
+    .header-btn {
+      background: none; border: none; color: white; font-size: 16px; cursor: pointer; outline: none;
+    }
+
+    /* ─── ロビー画面 ─── */
+    #view-lobby { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+    .lobby-title { padding: 12px 16px; font-size: 14px; color: #666; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center; }
+    
+    /* クリック可能なユーザー名（破線下線を表示） */
+    #lobby-username-tag {
+      font-size: 13px; color: var(--line-green); font-weight: bold; cursor: pointer;
+      text-decoration: underline; text-decoration-style: dashed; transition: opacity 0.1s;
+    }
+    #lobby-username-tag:hover { opacity: 0.8; }
+
+    .room-list { flex: 1; overflow-y: auto; list-style: none; }
+    .room-item {
+      display: flex; align-items: center; gap: 12px; padding: 14px 16px;
+      border-bottom: 1px solid #eee; cursor: pointer; transition: background 0.1s;
+    }
+    .room-item:hover { background: #fafafa; }
+    .room-avatar {
+      width: 44px; height: 44px; background: #ddd; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center; font-size: 20px; color: white;
+    }
+    .room-info { flex: 1; display: flex; align-items: center; justify-content: space-between; width: 100%; }
+    .room-name-wrapper { display: flex; flex-direction: column; gap: 4px; }
+    .room-name { font-weight: bold; font-size: 15px; }
+    .room-type { font-size: 11px; background: #eee; padding: 2px 6px; border-radius: 10px; color: #555; align-self: flex-start; }
+    
+    /* 未読バッジ (LINEレッド) */
+    .room-unread-badge {
+      background: #ff3b30; color: white; border-radius: 50%; padding: 2px 6px;
+      font-size: 10px; font-weight: bold; min-width: 18px; height: 18px;
+      display: flex; align-items: center; justify-content: center; margin-left: auto;
+    }
+
+    .btn-create {
+      margin: 16px; padding: 12px; background: var(--line-green); color: white;
+      border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 14px; text-align: center;
+    }
+
+    /* ─── トーク画面 ─── */
+    #view-chat { display: none; flex-direction: column; flex: 1; overflow: hidden; background: var(--chat-bg); }
+    .message-area { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+    
+    .msg { display: flex; flex-direction: column; max-width: 80%; }
+    .msg-sender { font-size: 11px; color: rgba(255,255,255,0.9); margin-bottom: 3px; font-weight: bold; }
+    
+    /* メッセージの構造（バルーン＋メタ情報） */
+    .msg-row { display: flex; align-items: flex-end; gap: 6px; }
+    .msg-bubble { padding: 8px 12px; border-radius: 14px; font-size: 14px; line-height: 1.4; word-break: break-all; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+    
+    /* メタ情報（時間・既読） */
+    .msg-meta { font-size: 9px; color: rgba(255,255,255,0.85); flex-shrink: 0; display: flex; flex-direction: column; gap: 1px; }
+    .msg-read-status { color: #fdf156; font-weight: bold; text-align: right; }
+
+    /* 自分（送信者）: 左側緑 */
+    .msg.me { align-self: flex-start; align-items: flex-start; }
+    .msg.me .msg-sender { align-self: flex-start; }
+    .msg.me .msg-row { flex-direction: row; } /* バルーン -> メタの順 */
+    .msg.me .msg-bubble { background: #95ec69; color: #191919; border-top-left-radius: 2px; }
+
+    /* 相手: 右側白 */
+    .msg.other { align-self: flex-end; align-items: flex-end; }
+    .msg.other .msg-sender { align-self: flex-end; }
+    .msg.other .msg-row { flex-direction: row-reverse; } /* メタ -> バルーンの順 */
+    .msg.other .msg-bubble { background: #ffffff; color: #191919; border-top-right-radius: 2px; }
+
+    /* 送信フォーム */
+    .input-form {
+      display: flex; padding: 8px; background: white; border-top: 1px solid #ddd; gap: 8px; flex-shrink: 0;
+    }
+    .input-form input {
+      flex: 1; border: 1px solid #ccc; border-radius: 20px; padding: 10px 16px; font-size: 14px; outline: none;
+    }
+    .input-form input:focus { border-color: var(--line-green); }
+    .input-form button {
+      background: var(--line-green); color: white; border: none; border-radius: 50%;
+      width: 40px; height: 40px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px;
+    }
+
+    /* ─── 設定画面 ─── */
+    #view-settings { display: none; flex-direction: column; flex: 1; overflow-y: auto; padding: 16px; gap: 20px; }
+    .setting-item { display: flex; flex-direction: column; gap: 6px; }
+    .setting-item input, .setting-item textarea {
+      padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; outline: none; width: 100%;
+    }
+    .setting-item input:focus { border-color: var(--line-green); }
+    .btn-save { padding: 12px; background: var(--line-green); color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; width: 100%; font-size: 14px; }
+    
+    /* ─── 各種モーダル ─── */
+    .modal {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+      align-items: center; justify-content: center; padding: 16px; z-index: 1000;
+    }
+    .modal.active { display: flex; }
+    .modal-content { background: white; border-radius: 8px; width: 100%; max-width: 320px; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+    .modal-title { font-weight: bold; font-size: 16px; }
+    .modal-btns { display: flex; gap: 8px; justify-content: flex-end; }
+    .modal-btn { padding: 8px 16px; border-radius: 4px; border: none; font-size: 13px; cursor: pointer; font-weight: bold; }
+    .modal-btn.cancel { background: #eee; color: #333; }
+    .modal-btn.confirm { background: var(--line-green); color: white; }
+  </style>
+  
+  <!-- Supabase CDN (v2) -->
+  \x3Cscript src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"\x3E\x3C\x2Fscript\x3E
+</head>
+<body>
+
+  <!-- ─── ヘッダー ─── -->
+  <div class="header">
+    <button class="header-btn" id="btn-back" style="visibility: hidden;">&#10094; 戻る</button>
+    <span id="title-text">We talks</span>
+    <button class="header-btn" id="btn-to-settings">&#9881;</button>
+  </div>
+
+  <!-- ─── ロビー画面 ─── -->
+  <div id="view-lobby">
+    <div class="lobby-title">
+      <span id="lobby-online-count-tag">● オンライン: 取得中...</span>
+      <span id="lobby-username-tag">取得中...</span>
+    </div>
+    <ul class="room-list" id="room-list-container"></ul>
+    <button class="btn-create" id="btn-open-create-modal">＋ 新しいトークルームを作成</button>
+  </div>
+
+  <!-- ─── トーク画面 ─── -->
+  <div id="view-chat">
+    <div class="message-area" id="message-container"></div>
+    <div class="input-form">
+      <input type="text" id="msg-input" placeholder="メッセージを入力" autocomplete="off" />
+      <button id="btn-send">&#10148;</button>
+    </div>
+  </div>
+
+  <!-- ─── 設定・プロフィール画面 (接続設定専用) ─── -->
+  <div id="view-settings">
+    <div style="padding-top: 10px;">
+      <h4 style="font-size:13px; color:#555; margin-bottom:10px;">Supabase 設定</h4>
+      <p style="font-size:11px; color:#888; margin-bottom:10px;">リアルタイム接続を行うために、取得した「URL」と「anon key」を入力してください。</p>
+      <div class="setting-item">
+        <label>Supabase URL</label>
+        <input type="text" id="input-supabase-url" placeholder="https://xxxxxxxxxxxxxx.supabase.co" />
+      </div>
+      <div class="setting-item" style="margin-top:10px;">
+        <label>Supabase anon key</label>
+        <textarea id="input-supabase-key" rows="4" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."></textarea>
+      </div>
+    </div>
+    
+    <!-- トークルーム管理の追加（削除機能） -->
+    <div style="border-top: 1px solid #ddd; padding-top: 15px; margin-top: 15px;">
+      <h4 style="font-size:13px; color:#ff3b30; margin-bottom:10px;">トークルームの管理 (管理者用)</h4>
+      <ul id="settings-room-list" style="list-style:none; padding:0; display:flex; flex-direction:column; gap:8px;">
+        <!-- トークルームリストが動的に挿入されます -->
+      </ul>
+    </div>
+    
+    <button class="btn-save" id="btn-save-settings" style="margin-top:20px;">保存して戻る</button>
+  </div>
+
+  <!-- ─── トークルーム作成モーダル ─── -->
+  <div class="modal" id="modal-create-room">
+    <div class="modal-content">
+      <div class="modal-title">新しいトーク</div>
+      <div class="setting-item">
+        <label>トークルーム名</label>
+        <input type="text" id="input-new-room-name" placeholder="例: 家族グループ、たかし" />
+      </div>
+      <div class="setting-item">
+        <label>タイプ</label>
+        <select id="select-new-room-type" style="padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
+          <option value="direct">1対1</option>
+          <option value="group">グループ</option>
+        </select>
+      </div>
+      <div class="modal-btns">
+        <button class="modal-btn cancel" id="btn-create-cancel">キャンセル</button>
+        <button class="modal-btn confirm" id="btn-create-confirm">作成</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── パスコード入力モーダル (設定の保護) ─── -->
+  <div class="modal" id="modal-passcode">
+    <div class="modal-content">
+      <div class="modal-title">管理者認証</div>
+      <div class="setting-item">
+        <label>設定を開くにはパスキーを入力してください</label>
+        <input type="password" id="input-passcode" placeholder="パスキーを入力" style="margin-top: 8px;" />
+        <div id="passcode-error" style="color: #ff3333; font-size: 12px; margin-top: 6px; display: none; font-weight: bold;">パスキーが一致しません。</div>
+      </div>
+      <div class="modal-btns">
+        <button class="modal-btn cancel" id="btn-passcode-cancel">キャンセル</button>
+        <button class="modal-btn confirm" id="btn-passcode-confirm">確認</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── ユーザー名変更モーダル ─── -->
+  <div class="modal" id="modal-change-username">
+    <div class="modal-content">
+      <div class="modal-title">プロフィールの編集</div>
+      <div class="setting-item">
+        <label>新しいユーザー名を入力してください</label>
+        <input type="text" id="input-new-username" placeholder="ユーザー名" style="margin-top: 8px;" autocomplete="off" />
+      </div>
+      <div class="modal-btns">
+        <button class="modal-btn cancel" id="btn-username-cancel">キャンセル</button>
+        <button class="modal-btn confirm" id="btn-username-confirm">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── アプリメインロジック ─── -->
+  \x3Cscript\x3E
+    (function() {
+      'use strict';
+
+      const DB_KEY = 'wetalks_local_db_v3';
+      function getLocalDB() {
+        const raw = localStorage.getItem(DB_KEY);
+        if (raw) return JSON.parse(raw);
+        const defaultDB = {
+          rooms: [],
+          messages: {}
+        };
+        localStorage.setItem(DB_KEY, JSON.stringify(defaultDB));
+        return defaultDB;
+      }
+
+      function saveLocalDB(db) {
+        localStorage.setItem(DB_KEY, JSON.stringify(db));
+      }
+
+      // ─── IPベースのユーザー名管理システム ───
+      const USER_MAP_KEY = 'wetalks_ip_username_map';
+      const SESSION_USER_KEY = 'wetalks_session_user';
+      let currentIp = "unknown_ip";
+
+      async function fetchUserIpAndInitName() {
+        try {
+          const res = await fetch("https://api.ipify.org?format=json");
+          const data = await res.json();
+          if (data && data.ip) {
+            currentIp = data.ip;
+          }
+        } catch (e) {
+          console.warn("IP Address API Fetch error, using default device storage fallback.", e);
+        }
+        initUsernameByIp();
+      }
+
+      function initUsernameByIp() {
+        let map = {};
+        try {
+          const raw = localStorage.getItem(USER_MAP_KEY);
+          if (raw) map = JSON.parse(raw);
+        } catch(e) {}
+
+        let name = map[currentIp];
+        if (!name) {
+          name = 'ユーザー' + Math.floor(1000 + Math.random() * 9000);
+          map[currentIp] = name;
+          localStorage.setItem(USER_MAP_KEY, JSON.stringify(map));
+        }
+
+        sessionStorage.setItem(SESSION_USER_KEY, name);
+        DOM.lobbyUsernameTag.textContent = name;
+      }
+
+      function getSessionUser() {
+        return sessionStorage.getItem(SESSION_USER_KEY) || "ユーザー";
+      }
+
+      function updateUsernameByIp(newName) {
+        sessionStorage.setItem(SESSION_USER_KEY, newName);
+        DOM.lobbyUsernameTag.textContent = newName;
+
+        let map = {};
+        try {
+          const raw = localStorage.getItem(USER_MAP_KEY);
+          if (raw) map = JSON.parse(raw);
+        } catch(e) {}
+
+        map[currentIp] = newName;
+        localStorage.setItem(USER_MAP_KEY, JSON.stringify(map));
+      }
+
+      let currentView = 'lobby';
+      let activeRoomId = null;
+      
+      let supabaseClient = null;
+      let msgChannel = null;
+      let presenceChannel = null;
+      let roomPresenceMembers = [];
+
+      // アクティビティ同期（オフライン・オンライン・既読用）
+      const ACTIVE_USERS_KEY = 'wetalks_active_users_in_rooms_v1';
+      let localPresenceInterval = null;
+
+      function startLocalPresence() {
+        if (localPresenceInterval) clearInterval(localPresenceInterval);
+        localPresenceInterval = setInterval(() => {
+          if (!activeRoomId) return;
+          let data = {};
+          try {
+            const raw = localStorage.getItem(ACTIVE_USERS_KEY);
+            if (raw) data = JSON.parse(raw);
+          } catch(e) {}
+          
+          if (!data[activeRoomId]) data[activeRoomId] = {};
+          data[activeRoomId][getSessionUser()] = Date.now();
+          localStorage.setItem(ACTIVE_USERS_KEY, JSON.stringify(data));
+          
+          updateReadReceipts();
+        }, 1000);
+      }
+
+      function stopLocalPresence() {
+        if (localPresenceInterval) {
+          clearInterval(localPresenceInterval);
+          localPresenceInterval = null;
+        }
+        if (!activeRoomId) return;
+        let data = {};
+        try {
+          const raw = localStorage.getItem(ACTIVE_USERS_KEY);
+          if (raw) data = JSON.parse(raw);
+        } catch(e) {}
+        if (data[activeRoomId]) {
+          delete data[activeRoomId][getSessionUser()];
+          localStorage.setItem(ACTIVE_USERS_KEY, JSON.stringify(data));
+        }
+      }
+
+      function updateReadReceipts() {
+        const myName = getSessionUser();
+        let otherActiveCount = 0;
+
+        if (supabaseClient) {
+          otherActiveCount = roomPresenceMembers.filter(member => member !== myName).length;
+        } else {
+          // ローカルアクティビティをもとに判定
+          let data = {};
+          try {
+            const raw = localStorage.getItem(ACTIVE_USERS_KEY);
+            if (raw) data = JSON.parse(raw);
+          } catch(e) {}
+          
+          const membersInRoom = data[activeRoomId] || {};
+          const now = Date.now();
+          const activeMembers = Object.keys(membersInRoom).filter(user => {
+            return user !== myName && (now - membersInRoom[user]) < 5000;
+          });
+          otherActiveCount = activeMembers.length;
+        }
+
+        document.querySelectorAll('.msg.me .msg-read-status').forEach(el => {
+          if (otherActiveCount > 0) {
+            el.textContent = otherActiveCount > 1 ? "既読 " + otherActiveCount : "既読";
+          } else {
+            el.textContent = "";
+          }
+        });
+      }
+
+      // 未読件数の管理
+      let unreadCounts = {};
+
+      const DOM = {
+        viewLobby: document.getElementById('view-lobby'),
+        viewChat: document.getElementById('view-chat'),
+        viewSettings: document.getElementById('view-settings'),
+        btnBack: document.getElementById('btn-back'),
+        btnToSettings: document.getElementById('btn-to-settings'),
+        titleText: document.getElementById('title-text'),
+        roomList: document.getElementById('room-list-container'),
+        messageContainer: document.getElementById('message-container'),
+        msgInput: document.getElementById('msg-input'),
+        btnSend: document.getElementById('btn-send'),
+        lobbyUsernameTag: document.getElementById('lobby-username-tag'),
+        lobbyOnlineCountTag: document.getElementById('lobby-online-count-tag'),
+        btnSaveSettings: document.getElementById('btn-save-settings'),
+        inputSupabaseUrl: document.getElementById('input-supabase-url'),
+        inputSupabaseKey: document.getElementById('input-supabase-key'),
+        modalCreate: document.getElementById('modal-create-room'),
+        btnOpenCreate: document.getElementById('btn-open-create-modal'),
+        btnCreateCancel: document.getElementById('btn-create-cancel'),
+        btnCreateConfirm: document.getElementById('btn-create-confirm'),
+        inputNewRoomName: document.getElementById('input-new-room-name'),
+        selectNewRoomType: document.getElementById('select-new-room-type'),
+        modalPasscode: document.getElementById('modal-passcode'),
+        inputPasscode: document.getElementById('input-passcode'),
+        btnPasscodeCancel: document.getElementById('btn-passcode-cancel'),
+        btnPasscodeConfirm: document.getElementById('btn-passcode-confirm'),
+        passcodeError: document.getElementById('passcode-error'),
+        modalUsername: document.getElementById('modal-change-username'),
+        inputNewUsername: document.getElementById('input-new-username'),
+        btnUsernameCancel: document.getElementById('btn-username-cancel'),
+        btnUsernameConfirm: document.getElementById('btn-username-confirm')
+      };
+
+      function initSupabase() {
+        let url = localStorage.getItem('wetalks_supabase_url');
+        let key = localStorage.getItem('wetalks_supabase_key');
+        
+        if (!url || !key) {
+          url = 'https://nsyvlftqcciyetsbhymg.supabase.co';
+          key = 'sb_publishable_lkhrFuMlNyEmUX4RTFApKw_AhD1sAkV';
+          localStorage.setItem('wetalks_supabase_url', url);
+          localStorage.setItem('wetalks_supabase_key', key);
+        }
+        
+        if (url && key) {
+          try {
+            supabaseClient = supabase.createClient(url, key);
+            console.log("Supabase Client initialized successfully.");
+            initGlobalPresence();
+            initGlobalMessageListener();
+          } catch(e) {
+            console.error("Supabase Connection Error:", e);
+          }
+        }
+      }
+
+      function initGlobalPresence() {
+        if (!supabaseClient) return;
+        presenceChannel = supabaseClient.channel('global-online-presence');
+        presenceChannel
+          .on('presence', { event: 'sync' }, () => {
+            const state = presenceChannel.presenceState();
+            const count = Object.keys(state).length;
+            DOM.lobbyOnlineCountTag.textContent = "● オンライン: " + count + "人";
+          })
+          .subscribe(async (status) => {
+            if (status === 'SUBSCRIBED') {
+              await presenceChannel.track({ user: getSessionUser(), onlineAt: new Date().toISOString() });
+            }
+          });
+      }
+
+      function initGlobalMessageListener() {
+        if (!supabaseClient) return;
+        supabaseClient
+          .channel('global-messages-unread')
+          .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+            const msg = payload.new;
+            if (msg.room_id !== activeRoomId && msg.sender !== getSessionUser()) {
+              unreadCounts[msg.room_id] = (unreadCounts[msg.room_id] || 0) + 1;
+              if (currentView === 'lobby') {
+                renderLobby();
+              }
+            }
+          })
+          .subscribe();
+      }
+
+      function switchView(view) {
+        currentView = view;
+        DOM.viewLobby.style.display = (view === 'lobby') ? 'flex' : 'none';
+        DOM.viewChat.style.display = (view === 'chat') ? 'flex' : 'none';
+        DOM.viewSettings.style.display = (view === 'settings') ? 'flex' : 'none';
+
+        if (view === 'lobby') {
+          DOM.btnBack.style.visibility = 'hidden';
+          DOM.btnToSettings.style.visibility = 'visible';
+          DOM.titleText.textContent = 'We talks';
+          activeRoomId = null;
+          renderLobby();
+        } else if (view === 'chat') {
+          DOM.btnBack.style.visibility = 'visible';
+          DOM.btnToSettings.style.visibility = 'hidden';
+          unreadCounts[activeRoomId] = 0;
+          startLocalPresence();
+          loadRoomTitleAndRender();
+        } else if (view === 'settings') {
+          DOM.btnBack.style.visibility = 'visible';
+          DOM.btnToSettings.style.visibility = 'hidden';
+          DOM.titleText.textContent = '接続キー設定';
+          DOM.inputSupabaseUrl.value = localStorage.getItem('wetalks_supabase_url') || '';
+          DOM.inputSupabaseKey.value = localStorage.getItem('wetalks_supabase_key') || '';
+          renderSettingsRoomList();
+        }
+      }
+
+      async function renderSettingsRoomList() {
+        const container = document.getElementById('settings-room-list');
+        if (!container) return;
+        container.innerHTML = '';
+
+        let rooms = [];
+        if (supabaseClient) {
+          const { data } = await supabaseClient.from('rooms').select('*');
+          if (data) rooms = data;
+        } else {
+          const db = getLocalDB();
+          rooms = db.rooms;
+        }
+
+        if (rooms.length === 0) {
+          container.innerHTML = '<li style="font-size:11px; color:#888;">作成されたルームはありません。</li>';
+          return;
+        }
+
+        rooms.forEach(room => {
+          const li = document.createElement('li');
+          li.style.cssText = 'display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.03); padding:8px 12px; border-radius:4px;';
+          
+          const nameSpan = document.createElement('span');
+          nameSpan.style.cssText = 'font-size:13px; font-weight:bold;';
+          nameSpan.textContent = room.name;
+
+          const delBtn = document.createElement('button');
+          delBtn.style.cssText = 'background:#ff3b30; color:white; border:none; padding:4px 10px; border-radius:4px; font-size:11px; cursor:pointer; font-weight:bold;';
+          delBtn.textContent = '削除';
+          delBtn.addEventListener('click', async () => {
+            // 安全なダブルクォーテーション結合に修正
+            if (confirm("本当に「" + room.name + "」トークルームと、その中のチャット履歴をすべて削除しますか？")) {
+              await deleteRoomAndMessages(room.id);
+              renderSettingsRoomList();
+              renderLobby();
+            }
+          });
+
+          li.appendChild(nameSpan);
+          li.appendChild(delBtn);
+          container.appendChild(li);
+        });
+      }
+
+      async function deleteRoomAndMessages(roomId) {
+        if (supabaseClient) {
+          await supabaseClient.from('messages').delete().eq('room_id', roomId);
+          await supabaseClient.from('rooms').delete().eq('id', roomId);
+          
+          const ch = supabaseClient.channel('global-lobby');
+          ch.subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+              ch.send({
+                type: 'broadcast',
+                event: 'room_deleted',
+                payload: { roomId }
+              }).then(() => {
+                supabaseClient.removeChannel(ch);
+              });
+            }
+          });
+        } else {
+          const db = getLocalDB();
+          db.rooms = db.rooms.filter(r => r.id !== roomId);
+          if (db.messages[roomId]) {
+            delete db.messages[roomId];
+          }
+          saveLocalDB(db);
+        }
+      }
+
+      async function loadRoomTitleAndRender() {
+        if (supabaseClient) {
+          const { data } = await supabaseClient.from('rooms').select('*').eq('id', activeRoomId).single();
+          DOM.titleText.textContent = data ? data.name : 'トークルーム';
+        } else {
+          const db = getLocalDB();
+          const room = db.rooms.find(r => r.id === activeRoomId);
+          DOM.titleText.textContent = room ? room.name : 'トークルーム';
+        }
+        renderMessages();
+      }
+
+      async function renderLobby() {
+        DOM.lobbyUsernameTag.textContent = getSessionUser();
+        DOM.roomList.innerHTML = '';
+        
+        if (supabaseClient) {
+          const { data, error } = await supabaseClient.from('rooms').select('*');
+          if (data) {
+            data.forEach(room => appendRoomItem(room));
+          }
+        } else {
+          const db = getLocalDB();
+          db.rooms.forEach(room => appendRoomItem(room));
+        }
+      }
+
+      function appendRoomItem(room) {
+        const li = document.createElement('li');
+        li.className = 'room-item';
+        li.addEventListener('click', () => {
+          activeRoomId = room.id;
+          switchView('chat');
+        });
+
+        const avatar = document.createElement('div');
+        avatar.className = 'room-avatar';
+        avatar.textContent = room.type === 'group' ? '👥' : '👤';
+        if (room.type === 'group') avatar.style.background = '#4ec5f1';
+
+        const info = document.createElement('div');
+        info.className = 'room-info';
+        
+        const wrapper = document.createElement('div');
+        wrapper.className = 'room-name-wrapper';
+        const name = document.createElement('div');
+        name.className = 'room-name';
+        name.textContent = room.name;
+        const type = document.createElement('span');
+        type.className = 'room-type';
+        type.textContent = room.type === 'group' ? 'グループトーク' : '1対1トーク';
+        
+        wrapper.appendChild(name);
+        wrapper.appendChild(type);
+        info.appendChild(wrapper);
+
+        // 未読バッジの追加
+        const unread = unreadCounts[room.id] || 0;
+        if (unread > 0) {
+          const badge = document.createElement('span');
+          badge.className = 'room-unread-badge';
+          badge.textContent = unread;
+          info.appendChild(badge);
+        }
+
+        li.appendChild(avatar);
+        li.appendChild(info);
+        DOM.roomList.appendChild(li);
+      }
+
+      function formatTime(createdAt) {
+        const date = createdAt ? new Date(createdAt) : new Date();
+        const hrs = String(date.getHours()).padStart(2, '0');
+        const mins = String(date.getMinutes()).padStart(2, '0');
+        return hrs + ':' + mins;
+      }
+
+      async function renderMessages() {
+        if (!activeRoomId) return;
+        DOM.messageContainer.innerHTML = '';
+
+        if (supabaseClient) {
+          const { data } = await supabaseClient
+            .from('messages')
+            .select('*')
+            .eq('room_id', activeRoomId)
+            .order('id', { ascending: true });
+            
+          if (data) {
+            data.forEach(msg => appendMessageBubble(msg));
+          }
+          
+          if (msgChannel) {
+            supabaseClient.removeChannel(msgChannel);
+          }
+          
+          msgChannel = supabaseClient.channel('room-' + activeRoomId);
+          msgChannel
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: 'room_id=eq.' + activeRoomId }, payload => {
+              appendMessageBubble(payload.new);
+              DOM.messageContainer.scrollTop = DOM.messageContainer.scrollHeight;
+            })
+            .on('presence', { event: 'sync' }, () => {
+              const state = msgChannel.presenceState();
+              roomPresenceMembers = Object.values(state).flatMap(presences => presences.map(p => p.user));
+              updateReadReceipts();
+            })
+            .subscribe(async (status) => {
+              if (status === 'SUBSCRIBED') {
+                await msgChannel.track({ user: getSessionUser() });
+              }
+            });
+
+        } else {
+          const db = getLocalDB();
+          const msgs = db.messages[activeRoomId] || [];
+          msgs.forEach(msg => appendMessageBubble(msg));
+        }
+        DOM.messageContainer.scrollTop = DOM.messageContainer.scrollHeight;
+      }
+
+      function appendMessageBubble(msg) {
+        const isMe = msg.sender === getSessionUser();
+        const msgDiv = document.createElement('div');
+        msgDiv.className = 'msg ' + (isMe ? 'me' : 'other');
+
+        if (!isMe) {
+          const senderName = document.createElement('div');
+          senderName.className = 'msg-sender';
+          senderName.textContent = msg.sender;
+          msgDiv.appendChild(senderName);
+        }
+
+        const msgRow = document.createElement('div');
+        msgRow.className = 'msg-row';
+
+        const bubble = document.createElement('div');
+        bubble.className = 'msg-bubble';
+        bubble.textContent = msg.text;
+
+        const meta = document.createElement('div');
+        meta.className = 'msg-meta';
+        
+        const readStatus = document.createElement('div');
+        readStatus.className = 'msg-read-status';
+        
+        if (isMe) {
+          let otherActiveCount = 0;
+          if (supabaseClient) {
+            otherActiveCount = roomPresenceMembers.filter(member => member !== getSessionUser()).length;
+          } else {
+            let data = {};
+            try {
+              const raw = localStorage.getItem(ACTIVE_USERS_KEY);
+              if (raw) data = JSON.parse(raw);
+            } catch(e) {}
+            const membersInRoom = data[activeRoomId] || {};
+            const now = Date.now();
+            otherActiveCount = Object.keys(membersInRoom).filter(u => u !== getSessionUser() && (now - membersInRoom[u]) < 5000).length;
+          }
+
+          if (otherActiveCount > 0) {
+            readStatus.textContent = otherActiveCount > 1 ? "既読 " + otherActiveCount : "既読";
+          }
+        }
+
+        const time = document.createElement('div');
+        time.className = 'msg-time';
+        time.textContent = formatTime(msg.created_at);
+
+        meta.appendChild(readStatus);
+        meta.appendChild(time);
+        
+        msgRow.appendChild(bubble);
+        msgRow.appendChild(meta);
+        msgDiv.appendChild(msgRow);
+        DOM.messageContainer.appendChild(msgDiv);
+      }
+
+      async function sendMessage() {
+        const text = DOM.msgInput.value.trim();
+        if (!text) return;
+
+        const msg = {
+          room_id: activeRoomId,
+          sender: getSessionUser(),
+          text: text
+        };
+
+        if (supabaseClient) {
+          await supabaseClient.from('messages').insert([msg]);
+        } else {
+          const db = getLocalDB();
+          if (!db.messages[activeRoomId]) db.messages[activeRoomId] = [];
+          
+          const localMsg = {
+            id: 'm-' + Date.now(),
+            sender: msg.sender,
+            text: msg.text,
+            created_at: new Date().toISOString()
+          };
+          db.messages[activeRoomId].push(localMsg);
+          saveLocalDB(db);
+          renderMessages();
+        }
+
+        DOM.msgInput.value = '';
+      }
+
+      async function createRoom() {
+        const name = DOM.inputNewRoomName.value.trim();
+        if (!name) return;
+        const type = DOM.selectNewRoomType.value;
+        const roomId = 'room-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4);
+
+        if (supabaseClient) {
+          await supabaseClient.from('rooms').insert([{ id: roomId, name, type }]);
+        } else {
+          const db = getLocalDB();
+          db.rooms.push({ id: roomId, name, type });
+          db.messages[roomId] = [];
+          saveLocalDB(db);
+        }
+
+        DOM.inputNewRoomName.value = '';
+        DOM.modalCreate.classList.remove('active');
+        renderLobby();
+      }
+
+      DOM.btnBack.addEventListener('click', () => {
+        if (currentView === 'chat' || currentView === 'settings') {
+          if (msgChannel && supabaseClient) {
+            supabaseClient.removeChannel(msgChannel);
+            msgChannel = null;
+          }
+          switchView('lobby');
+        }
+      });
+
+      DOM.btnToSettings.addEventListener('click', () => {
+        DOM.inputPasscode.value = '';
+        DOM.passcodeError.style.display = 'none';
+        DOM.modalPasscode.classList.add('active');
+        DOM.inputPasscode.focus();
+      });
+
+      DOM.btnPasscodeCancel.addEventListener('click', () => {
+        DOM.modalPasscode.classList.remove('active');
+      });
+
+      DOM.btnPasscodeConfirm.addEventListener('click', () => {
+        const pass = DOM.inputPasscode.value;
+        if (pass === 'mozunbu_1203') {
+          DOM.modalPasscode.classList.remove('active');
+          switchView('settings');
+        } else {
+          DOM.passcodeError.style.display = 'block';
+        }
+      });
+
+      DOM.lobbyUsernameTag.addEventListener('click', () => {
+        DOM.inputNewUsername.value = getSessionUser();
+        DOM.modalUsername.classList.add('active');
+        DOM.inputNewUsername.focus();
+      });
+
+      DOM.btnUsernameCancel.addEventListener('click', () => {
+        DOM.modalUsername.classList.remove('active');
+      });
+
+      DOM.btnUsernameConfirm.addEventListener('click', () => {
+        const newName = DOM.inputNewUsername.value.trim();
+        if (newName) {
+          updateUsernameByIp(newName);
+          DOM.modalUsername.classList.remove('active');
+          renderLobby();
+          
+          if (presenceChannel) {
+            presenceChannel.track({ user: newName, onlineAt: new Date().toISOString() });
+          }
+        }
+      });
+
+      DOM.btnSaveSettings.addEventListener('click', () => {
+        const newUrl = DOM.inputSupabaseUrl.value.trim();
+        const newKey = DOM.inputSupabaseKey.value.trim();
+        
+        if (newUrl && newKey) {
+          localStorage.setItem('wetalks_supabase_url', newUrl);
+          localStorage.setItem('wetalks_supabase_key', newKey);
+        } else {
+          localStorage.removeItem('wetalks_supabase_url');
+          localStorage.removeItem('wetalks_supabase_key');
+          supabaseClient = null;
+        }
+        
+        initSupabase();
+        switchView('lobby');
+      });
+
+      DOM.btnSend.addEventListener('click', sendMessage);
+      DOM.msgInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter') sendMessage();
+      });
+
+      DOM.btnOpenCreate.addEventListener('click', () => {
+        DOM.modalCreate.classList.add('active');
+      });
+      DOM.btnCreateCancel.addEventListener('click', () => {
+        DOM.modalCreate.classList.remove('active');
+      });
+      DOM.btnCreateConfirm.addEventListener('click', createRoom);
+
+      window.addEventListener('storage', e => {
+        if (e.key === DB_KEY) {
+          if (currentView === 'lobby') {
+            renderLobby();
+          } else if (currentView === 'chat') {
+            renderMessages();
+          }
+        }
+        // 他タブからのアクティビティ更新（既読同期）を検知する
+        if (e.key === ACTIVE_USERS_KEY) {
+          updateReadReceipts();
+        }
+      });
+
+      // 他クライアントからの部屋削除イベントを受け取るためのロビー・ブロードキャストチャンネル
+      function initGlobalDeleteListener() {
+        if (!supabaseClient) return;
+        const lobbyChannel = supabaseClient.channel('global-lobby-sync');
+        lobbyChannel
+          .on('broadcast', { event: 'room_deleted' }, ({ payload }) => {
+            const delId = payload.roomId;
+            if (activeRoomId === delId) {
+              alert("このトークルームは管理者に削除されました。");
+              switchView('lobby');
+            } else {
+              renderLobby();
+            }
+          })
+          .subscribe();
+      }
+
+      initSupabase();
+      initGlobalDeleteListener();
+      fetchUserIpAndInitName().then(() => {
+        switchView('lobby');
+      });
+
+    })();
+  \x3C\x2Fscript\x3E
+</body>
+</html>
+`;
+
+  // ─── [We talks: 1. ヨット/ヨッツ（Yacht / Dice Game）] 仮想ソースコードの定義 ─────────────────────
+  const YACHT_GAME_HTML = `
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>We talks Yacht Dice</title>
+  <style>
+    :root {
+      --primary: #06C755;
+      --bg: #1e293b;
+      --panel: #334155;
+      --text: #f8fafc;
+      --text-dim: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg); color: var(--text); padding: 12px; display: flex; flex-direction: column; overflow: hidden;
+    }
+    .header { background: var(--primary); padding: 12px; font-weight: bold; border-radius: 8px; text-align: center; margin-bottom: 12px; flex-shrink: 0; font-size:16px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    
+    .lobby-screen, .game-screen { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+    .room-list { flex: 1; overflow-y: auto; list-style: none; margin-bottom: 12px; }
+    .room-item {
+      background: var(--panel); padding: 14px 16px; margin-bottom: 8px; border-radius: 8px;
+      display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: transform 0.1s;
+    }
+    .room-item:hover { transform: translateY(-1px); }
+    .room-name { font-weight: bold; }
+    .room-players { font-size: 12px; color: var(--text-dim); }
+    
+    .btn { background: var(--primary); color: white; border: none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; text-align: center; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.15); transition: background-color 0.15s; }
+    .btn:hover { background: #05b042; }
+    .btn.secondary { background: #64748b; }
+    .btn.secondary:hover { background: #475569; }
+
+    /* ─── ヨットゲームボード ─── */
+    .game-board { display: flex; flex-direction: row; gap: 12px; flex: 1; overflow: hidden; }
+    .board-left { flex: 1.2; display: flex; flex-direction: column; gap: 12px; }
+    .board-right { flex: 0.8; background: var(--panel); border-radius: 8px; padding: 10px; overflow-y: auto; font-size: 12px; }
+    
+    /* ダイスエリア */
+    .dice-container { display: flex; gap: 8px; justify-content: center; padding: 10px 0; }
+    .dice {
+      width: 48px; height: 48px; background: white; color: #1e293b; border-radius: 8px;
+      font-size: 24px; font-weight: bold; display: flex; align-items: center; justify-content: center;
+      cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.2); border: 3px solid transparent;
+      user-select: none; transition: transform 0.1s;
+    }
+    .dice.kept { border-color: #ea580c; background: #ffedd5; transform: scale(0.95); }
+    
+    /* 得点表 */
+    .score-table { width: 100%; border-collapse: collapse; text-align: left; margin-top: 4px; }
+    .score-table th, .score-table td { padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+    .score-table th { background: rgba(0,0,0,0.2); color: var(--text-dim); font-size: 11px; }
+    .score-row { cursor: pointer; transition: background-color 0.1s; }
+    .score-row:hover:not(.scored) { background: rgba(255,255,255,0.05); }
+    .score-row.scored { cursor: not-allowed; opacity: 0.6; }
+    .score-val { text-align: right; font-weight: bold; color: var(--primary); }
+    .score-val.potential { color: #f59e0b; opacity: 0.8; }
+    
+    .game-status-bar { padding: 8px; background: rgba(0,0,0,0.15); border-radius: 6px; font-size: 13px; text-align: center; font-weight: bold; }
+  </style>
+  \x3Cscript src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"\x3E\x3C/script\x3E
+</head>
+<body>
+
+  <div class="header" id="header-text">We talks Yacht Dice</div>
+
+  <!-- ロビー画面 -->
+  <div class="lobby-screen" id="lobby-screen">
+    <div style="font-size: 13px; color: var(--text-dim); margin-bottom: 12px; text-align: center;">部屋コードを指定してオンライン対戦相手と繋がります</div>
+    <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+      <input type="text" id="input-room-code" placeholder="部屋コードを入力 (例: 777)" style="flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #475569; background: var(--panel); color: white; outline: none; font-size: 14px;" />
+      <button class="btn" id="btn-join-room">部屋に入る / 作成</button>
+    </div>
+    <button class="btn secondary" id="btn-solo-play" style="width: 100%;">練習用ソロプレイ (オフライン)</button>
+  </div>
+
+  <!-- ゲーム画面 -->
+  <div class="game-screen" id="game-screen" style="display: none;">
+    <div class="game-board">
+      
+      <!-- 左：ダイスロール・操作 -->
+      <div class="board-left">
+        <div class="game-status-bar" id="status-bar">対戦相手を待っています...</div>
+        
+        <div class="dice-container" id="dice-container">
+          <div class="dice" data-idx="0">⚀</div>
+          <div class="dice" data-idx="1">⚀</div>
+          <div class="dice" data-idx="2">⚀</div>
+          <div class="dice" data-idx="3">⚀</div>
+          <div class="dice" data-idx="4">⚀</div>
+        </div>
+
+        <div style="display: flex; gap: 8px; justify-content: center;">
+          <button class="btn" id="btn-roll" style="flex: 1;">サイコロを振る (残り3回)</button>
+          <button class="btn secondary" id="btn-leave-game" style="flex: 0.5;">退出</button>
+        </div>
+
+        <div style="font-size: 10px; color: var(--text-dim); text-align: center;">※キープしたいサイコロをタップして「サイコロを振る」を押してください。</div>
+      </div>
+
+      <!-- 右：スコアボード -->
+      <div class="board-right">
+        <h4 style="border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 4px; margin-bottom: 6px; font-size: 13px;">スコアシート</h4>
+        <table class="score-table">
+          <thead>
+            <tr>
+              <th>役名</th>
+              <th style="text-align: right;">あなた</th>
+              <th style="text-align: right;" id="col-opp">相手</th>
+            </tr>
+          </thead>
+          <tbody id="score-rows-container">
+            <!-- 役一覧 -->
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+
+  \x3Cscript\x3E
+    (function() {
+      'use strict';
+
+      // ─── 接続設定のロード ───
+      let supabaseClient = null;
+      let gameChannel = null;
+      const url = localStorage.getItem('wetalks_supabase_url') || 'https://nsyvlftqcciyetsbhymg.supabase.co';
+      const key = localStorage.getItem('wetalks_supabase_key') || 'sb_publishable_lkhrFuMlNyEmUX4RTFApKw_AhD1sAkV';
+      try {
+        supabaseClient = supabase.createClient(url, key);
+      } catch(e) {}
+
+      // ─── 状態管理 ───
+      let isSolo = false;
+      let myId = 'p-' + Math.floor(1000 + Math.random() * 9000);
+      let myName = sessionStorage.getItem('wetalks_session_user') || 'ゲスト';
+      let oppId = null;
+      let oppName = "対戦相手";
+
+      let diceValues = [1, 1, 1, 1, 1];
+      let diceKept = [false, false, false, false, false];
+      let rollCount = 0;
+      let isMyTurn = false;
+      let gameActive = false;
+
+      // ヨットの役定義
+      const CATEGORIES = [
+        { id: 'aces', name: '① エース', calc: d => sumOf(d, 1) },
+        { id: 'deuces', name: '② デュース', calc: d => sumOf(d, 2) },
+        { id: 'treys', name: '③ トレイ', calc: d => sumOf(d, 3) },
+        { id: 'fours', name: '④ フォー', calc: d => sumOf(d, 4) },
+        { id: 'fives', name: '⑤ ファイブ', calc: d => sumOf(d, 5) },
+        { id: 'sixes', name: '⑥ シックス', calc: d => sumOf(d, 6) },
+        { id: 'choice', name: '選択 (全合計)', calc: d => d.reduce((a, b) => a + b, 0) },
+        { id: 'four_kind', name: 'フォー・カインド', calc: d => hasOfKind(d, 4) ? d.reduce((a, b) => a + b, 0) : 0 },
+        { id: 'full_house', name: 'フルハウス', calc: d => isFullHouse(d) ? d.reduce((a, b) => a + b, 0) : 0 },
+        { id: 's_straight', name: 'S.ストレート', calc: d => isSmallStraight(d) ? 15 : 0 },
+        { id: 'l_straight', name: 'L.ストレート', calc: d => isLargeStraight(d) ? 30 : 0 },
+        { id: 'yacht', name: 'ヨット', calc: d => hasOfKind(d, 5) ? 50 : 0 }
+      ];
+
+      let myScores = {};
+      let oppScores = {};
+
+      const DOM = {
+        lobby: document.getElementById('lobby-screen'),
+        game: document.getElementById('game-screen'),
+        roomCode: document.getElementById('input-room-code'),
+        btnJoin: document.getElementById('btn-join-room'),
+        btnSolo: document.getElementById('btn-solo-play'),
+        statusBar: document.getElementById('status-bar'),
+        btnRoll: document.getElementById('btn-roll'),
+        btnLeave: document.getElementById('btn-leave-game'),
+        diceContainer: document.getElementById('dice-container'),
+        colOpp: document.getElementById('col-opp'),
+        scoreRows: document.getElementById('score-rows-container'),
+        headerText: document.getElementById('header-text')
+      };
+
+      // ─── ダイス役計算ヘルパー ───
+      function sumOf(d, val) { return d.filter(x => x === val).length * val; }
+      function hasOfKind(d, num) {
+        const counts = d.reduce((acc, val) => { acc[val] = (acc[val] || 0) + 1; return acc; }, {});
+        return Object.values(counts).some(c => c >= num);
+      }
+      function isFullHouse(d) {
+        const counts = d.reduce((acc, val) => { acc[val] = (acc[val] || 0) + 1; return acc; }, {});
+        const vals = Object.values(counts);
+        return (vals.includes(3) && vals.includes(2)) || vals.includes(5);
+      }
+      function isSmallStraight(d) {
+        const unique = Array.from(new Set(d)).sort().join("");
+        return unique.includes("1234") || unique.includes("2345") || unique.includes("3456");
+      }
+      function isLargeStraight(d) {
+        const unique = Array.from(new Set(d)).sort().join("");
+        return unique === "12345" || unique === "23456";
+      }
+
+      // ─── ダイス表示更新 ───
+      const DICE_CHARS = ["", "⚀", "⚁", "⚂", "⚃", "⚄", "⚅"];
+      function updateDiceUI() {
+        DOM.diceContainer.querySelectorAll('.dice').forEach((dice, idx) => {
+          dice.textContent = DICE_CHARS[diceValues[idx]];
+          dice.classList.toggle('kept', diceKept[idx]);
+        });
+      }
+
+      // スコアボード描画
+      function updateScoreboard() {
+        DOM.scoreRows.innerHTML = '';
+        CATEGORIES.forEach(cat => {
+          const tr = document.createElement('tr');
+          tr.className = 'score-row';
+          if (myScores[cat.id] !== undefined) tr.classList.add('scored');
+
+          const tdName = document.createElement('td');
+          tdName.textContent = cat.name;
+
+          const tdMy = document.createElement('td');
+          tdMy.className = 'score-val';
+          if (myScores[cat.id] !== undefined) {
+            tdMy.textContent = myScores[cat.id];
+          } else if (rollCount > 0 && isMyTurn && gameActive) {
+            tdMy.textContent = cat.calc(diceValues);
+            tdMy.classList.add('potential');
+            // 行クリックで役を確定
+            tr.addEventListener('click', () => selectCategory(cat.id));
+          } else {
+            tdMy.textContent = '-';
+          }
+
+          const tdOpp = document.createElement('td');
+          tdOpp.className = 'score-val';
+          tdOpp.textContent = oppScores[cat.id] !== undefined ? oppScores[cat.id] : '-';
+          if (isSolo) tdOpp.style.display = 'none';
+
+          tr.appendChild(tdName);
+          tr.appendChild(tdMy);
+          tr.appendChild(tdOpp);
+          DOM.scoreRows.appendChild(tr);
+        });
+
+        // 合計点の追加
+        const totalTr = document.createElement('tr');
+        totalTr.style.background = 'rgba(255,255,255,0.05)';
+        totalTr.style.fontWeight = 'bold';
+        const tdTotalName = document.createElement('td');
+        tdTotalName.textContent = '合計得点';
+        const tdMyTotal = document.createElement('td');
+        tdMyTotal.className = 'score-val';
+        tdMyTotal.textContent = Object.values(myScores).reduce((a,b)=>a+b, 0);
+        const tdOppTotal = document.createElement('td');
+        tdOppTotal.className = 'score-val';
+        tdOppTotal.textContent = Object.values(oppScores).reduce((a,b)=>a+b, 0);
+        if (isSolo) tdOppTotal.style.display = 'none';
+
+        totalTr.appendChild(tdTotalName);
+        totalTr.appendChild(tdMyTotal);
+        totalTr.appendChild(tdOppTotal);
+        DOM.scoreRows.appendChild(totalTr);
+      }
+
+      // ─── ゲーム進行ロジック ───
+      function selectCategory(catId) {
+        if (!isMyTurn || myScores[catId] !== undefined || rollCount === 0) return;
+        
+        const score = CATEGORIES.find(c => c.id === catId).calc(diceValues);
+        myScores[catId] = score;
+
+        // キープ解除
+        diceKept = [false, false, false, false, false];
+        rollCount = 0;
+
+        if (isSolo) {
+          checkGameOver();
+        } else {
+          isMyTurn = false;
+          sendGameState();
+        }
+        updateScoreboard();
+        updateDiceUI();
+        updateGameStatus();
+      }
+
+      function rollDice() {
+        if (!isMyTurn || rollCount >= 3) return;
+        for (let i = 0; i < 5; i++) {
+          if (!diceKept[i]) {
+            diceValues[i] = Math.floor(Math.random() * 6) + 1;
+          }
+        }
+        rollCount++;
+        DOM.btnRoll.textContent = "サイコロを振る (残り" + (3 - rollCount) + "回)";
+        if (rollCount >= 3) DOM.btnRoll.disabled = true;
+
+        updateDiceUI();
+        updateScoreboard();
+        
+        if (!isSolo) {
+          sendGameState();
+        }
+      }
+
+      // ─── Supabaseリアルタイム同期 ───
+      function joinRoom(roomCode) {
+        if (!supabaseClient) return alert("シミュレーターの設定でSupabaseが連携されていないため動作しません。");
+        
+        isSolo = false;
+        DOM.colOpp.style.display = 'table-cell';
+        DOM.headerText.textContent = "Yacht Room: " + roomCode;
+        
+        DOM.lobby.style.display = 'none';
+        DOM.game.style.display = 'flex';
+
+        // 部屋のチャンネルをリッスン
+        gameChannel = supabaseClient.channel('yacht-' + roomCode);
+        gameChannel
+          .on('broadcast', { event: 'join' }, ({ payload }) => {
+            if (payload.id !== myId) {
+              oppId = payload.id;
+              oppName = payload.name;
+              // 挨拶を返す
+              gameChannel.send({ type: 'broadcast', event: 'welcome', payload: { id: myId, name: myName, start: true } });
+              gameActive = true;
+              isMyTurn = true; // 部屋を立てた人が先攻
+              updateGameStatus();
+              updateScoreboard();
+            }
+          })
+          .on('broadcast', { event: 'welcome' }, ({ payload }) => {
+            if (payload.id !== myId) {
+              oppId = payload.id;
+              oppName = payload.name;
+              gameActive = true;
+              isMyTurn = false; // 誘われた人が後攻
+              updateGameStatus();
+              updateScoreboard();
+            }
+          })
+          .on('broadcast', { event: 'state' }, ({ payload }) => {
+            if (payload.id !== myId) {
+              diceValues = payload.diceValues;
+              oppScores = payload.scores;
+              
+              // 相手が役を記入した場合、手番が移る
+              if (payload.turnEnded) {
+                isMyTurn = true;
+                rollCount = 0;
+                diceKept = [false, false, false, false, false];
+                DOM.btnRoll.textContent = "サイコロを振る (残り3回)";
+              }
+              updateDiceUI();
+              updateScoreboard();
+              updateGameStatus();
+            }
+          })
+          .on('broadcast', { event: 'leave' }, () => {
+            alert("対戦相手が退出しました。");
+            leaveGame();
+          })
+          .subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+              // 参加をアナウンス
+              gameChannel.send({ type: 'broadcast', event: 'join', payload: { id: myId, name: myName } });
+            }
+          });
+      }
+
+      function sendGameState() {
+        if (!gameChannel) return;
+        gameChannel.send({
+          type: 'broadcast',
+          event: 'state',
+          payload: {
+            id: myId,
+            diceValues: diceValues,
+            scores: myScores,
+            turnEnded: (rollCount === 0) // rollCountがリセット＝確定手番終了
+          }
+        });
+      }
+
+      function startSoloPlay() {
+        isSolo = true;
+        DOM.colOpp.style.display = 'none';
+        DOM.headerText.textContent = "We talks Yacht (Solo)";
+        DOM.lobby.style.display = 'none';
+        DOM.game.style.display = 'flex';
+        gameActive = true;
+        isMyTurn = true;
+        
+        myScores = {};
+        oppScores = {};
+        rollCount = 0;
+        diceValues = [1, 1, 1, 1, 1];
+        diceKept = [false, false, false, false, false];
+
+        updateDiceUI();
+        updateScoreboard();
+        updateGameStatus();
+      }
+
+      function leaveGame() {
+        if (gameChannel) {
+          gameChannel.send({ type: 'broadcast', event: 'leave', payload: { id: myId } });
+          supabaseClient.removeChannel(gameChannel);
+          gameChannel = null;
+        }
+        isSolo = false;
+        gameActive = false;
+        myScores = {};
+        oppScores = {};
+        DOM.lobby.style.display = 'flex';
+        DOM.game.style.display = 'none';
+        DOM.headerText.textContent = "We talks Yacht Dice";
+      }
+
+      // ─── イベント登録 ───
+      DOM.btnJoin.addEventListener('click', () => {
+        const code = DOM.roomCode.value.trim();
+        if (code) joinRoom(code);
+      });
+      DOM.btnSolo.addEventListener('click', startSoloPlay);
+      DOM.btnLeave.addEventListener('click', leaveGame);
+
+      DOM.btnRoll.addEventListener('click', rollDice);
+
+      DOM.diceContainer.querySelectorAll('.dice').forEach(dice => {
+        dice.addEventListener('click', () => {
+          const idx = parseInt(dice.getAttribute('data-idx'));
+          toggleKeep(idx);
+        });
+      });
+
+    })();
+  \x3C\x2Fscript\x3E
+</body>
+</html>
+`;
+
+  // ─── [We talks: 2. UNO風ゲーム（UNO Card Game）] 仮想ソースコードの定義 ───────────────────
+  const UNO_GAME_HTML = `
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>We talks UNO</title>
+  <style>
+    :root {
+      --primary: #06C755;
+      --bg: #151515;
+      --panel: #222222;
+      --text: #f5f5f5;
+      --text-dim: #999;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg); color: var(--text); padding: 12px; display: flex; flex-direction: column; overflow: hidden;
+    }
+    .header { background: var(--primary); padding: 12px; font-weight: bold; border-radius: 8px; text-align: center; margin-bottom: 12px; flex-shrink: 0; font-size:16px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    
+    .lobby-screen, .game-screen { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+    .btn { background: var(--primary); color: white; border: none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; text-align: center; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.15); transition: background-color 0.15s; }
+    .btn:hover { background: #05b042; }
+    .btn.secondary { background: #444; }
+    .btn.secondary:hover { background: #333; }
+
+    /* ─── ゲームエリア ─── */
+    .game-area { display: flex; flex-direction: column; flex: 1; justify-content: space-between; overflow: hidden; gap: 8px; }
+    
+    /* 対戦相手の手札（枚数だけ表示） */
+    .opponent-hand-area { background: var(--panel); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .opponent-cards { display: flex; gap: -15px; } /* 重なるようにマイナスマージン */
+    .card-back {
+      width: 44px; height: 66px; background: radial-gradient(circle, #f43f5e 60%, #9f1239 100%);
+      border: 2px solid white; border-radius: 6px; display: flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: bold; color: yellow; transform: scale(0.9); box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+
+    /* フィールド（山札と捨て札） */
+    .field-area { display: flex; flex: 1; align-items: center; justify-content: center; gap: 32px; background: rgba(255,255,255,0.02); border-radius: 8px; position: relative; }
+    .pile-container { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    
+    /* リアルなUNO風のカードグラフィック */
+    .card {
+      width: 54px; height: 80px; border-radius: 8px; border: 3px solid white;
+      display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 20px;
+      color: white; cursor: pointer; position: relative; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+      user-select: none; transition: transform 0.12s, margin-top 0.12s;
+    }
+    .card:hover { transform: translateY(-8px) scale(1.05); z-index: 10; }
+    .card.red { background: linear-gradient(135deg, #ef4444, #b91c1c); }
+    .card.yellow { background: linear-gradient(135deg, #eab308, #a16207); color: #000; border-color: #000; }
+    .card.green { background: linear-gradient(135deg, #22c55e, #15803d); }
+    .card.blue { background: linear-gradient(135deg, #3b82f6, #1d4ed8); }
+    .card.wild { background: linear-gradient(135deg, #1e1e1e, #111111); }
+
+    /* プレイヤーの手札 */
+    .player-hand-area { background: var(--panel); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; align-items: center; gap: 8px; flex-shrink: 0; }
+    .player-cards { display: flex; gap: 4px; overflow-x: auto; width: 100%; justify-content: center; padding: 6px 0; }
+    
+    .status-bar { padding: 8px; background: rgba(0,0,0,0.3); border-radius: 6px; font-size: 13px; text-align: center; font-weight: bold; width: 100%; }
+
+    /* ─── アニメーション効果 ─── */
+    @keyframes slideInFromDeck {
+      0% {
+        transform: translateY(-200px) rotate(45deg);
+        opacity: 0;
+      }
+      100% {
+        transform: translateY(0) rotate(0deg);
+        opacity: 1;
+      }
+    }
+    .card.drawn-anim {
+      animation: slideInFromDeck 0.4s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+    }
+
+    @keyframes slideToDiscard {
+      0% {
+        transform: translateY(120px) scale(1.1) rotate(-10deg);
+        opacity: 0.5;
+      }
+      100% {
+        transform: translateY(0) scale(1) rotate(0deg);
+        opacity: 1;
+      }
+    }
+    .card.played-anim {
+      animation: slideToDiscard 0.3s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+    }
+
+    @keyframes slideToDiscardFromOpp {
+      0% {
+        transform: translateY(-120px) scale(1.1) rotate(10deg);
+        opacity: 0.5;
+      }
+      100% {
+        transform: translateY(0) scale(1) rotate(0deg);
+        opacity: 1;
+      }
+    }
+    .card.played-opp-anim {
+      animation: slideToDiscardFromOpp 0.3s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+    }
+  </style>
+  \x3Cscript src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"\x3E\x3C/script\x3E
+</head>
+<body>
+
+  <div class="header" id="header-text">We talks UNO</div>
+
+  <!-- ロビー画面 -->
+  <div class="lobby-screen" id="lobby-screen">
+    <div style="font-size: 13px; color: var(--text-dim); margin-bottom: 12px; text-align: center;">部屋コードを指定してオンライン対戦相手と繋がります</div>
+    <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+      <input type="text" id="input-room-code" placeholder="部屋コードを入力 (例: 888)" style="flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #475569; background: var(--panel); color: white; outline: none; font-size: 14px;" />
+      <button class="btn" id="btn-join-room">部屋に入る / 作成</button>
+    </div>
+    <button class="btn secondary" id="btn-ai-play" style="width: 100%;">練習用AI対戦プレイ (オフライン)</button>
+  </div>
+
+  <!-- ゲーム画面 -->
+  <div class="game-screen" id="game-screen" style="display: none;">
+    <div class="game-area">
+      
+      <!-- 対戦相手のエントリ -->
+      <div class="opponent-hand-area">
+        <span id="opp-name-tag" style="font-size: 12px; font-weight: bold;">AI対戦相手 (手札: 7枚)</span>
+        <div class="opponent-cards" id="opp-cards-container">
+          <!-- 相手のカードの背裏が並びます -->
+        </div>
+      </div>
+
+      <!-- フィールド(山札・捨て札) -->
+      <div class="field-area">
+        <div class="pile-container">
+          <div class="card-back" id="btn-draw" style="cursor: pointer; width: 56px; height: 82px; font-size: 11px;">山札<br>引く</div>
+        </div>
+        <div class="pile-container">
+          <span style="font-size:11px; color: var(--text-dim);">場札</span>
+          <div id="discard-card-container">
+            <!-- 捨て札 -->
+          </div>
+        </div>
+
+        <!-- 連続出し時などの「ターン終了」ボタンを新設 -->
+        <button class="btn" id="btn-end-turn" style="display: none; position: absolute; left: 12px; bottom: 12px; padding: 6px 12px; font-size:11px; background:#f59e0b;">ターン終了</button>
+        <button class="btn secondary" id="btn-leave-game" style="position: absolute; right: 12px; bottom: 12px; padding: 6px 12px; font-size:11px;">退出</button>
+      </div>
+
+      <!-- プレイヤー側の操作エリア -->
+      <div class="player-hand-area">
+        <div class="status-bar" id="status-bar">山札から引くか、出せるカードを出してください。</div>
+        <div class="player-cards" id="player-cards-container">
+          <!-- あなたの手札 -->
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  \x3Cscript\x3E
+    (function() {
+      'use strict';
+
+      // ─── 接続設定 of Supabase ───
+      let supabaseClient = null;
+      let gameChannel = null;
+      const url = localStorage.getItem('wetalks_supabase_url') || 'https://nsyvlftqcciyetsbhymg.supabase.co';
+      const key = localStorage.getItem('wetalks_supabase_key') || 'sb_publishable_lkhrFuMlNyEmUX4RTFApKw_AhD1sAkV';
+      try {
+        supabaseClient = supabase.createClient(url, key);
+      } catch(e) {}
+
+      // ─── 状態管理 ───
+      let isSolo = false; // AI対戦モード
+      let myId = 'p-' + Math.floor(1000 + Math.random() * 9000);
+      let myName = sessionStorage.getItem('wetalks_session_user') || 'ゲスト';
+      let oppId = null;
+      let oppName = "対戦相手";
+
+      let myHand = [];
+      let oppHandCount = 0; // オンライン対戦用
+      let oppHand = []; // AI対戦用
+      
+      let discardPile = [];
+      let activeColor = '';
+      let isMyTurn = false;
+      let gameActive = false;
+
+      // 【同数字連続出し（スタッキングルール）用のステート】
+      let stackedValue = null; 
+      let lastAction = null; // 'draw', 'play_me', 'play_opp', 'draw_opp', null
+
+      const COLORS = ['red', 'yellow', 'green', 'blue'];
+      const VALUES = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'Skip', 'Draw2'];
+
+      const DOM = {
+        lobby: document.getElementById('lobby-screen'),
+        game: document.getElementById('game-screen'),
+        roomCode: document.getElementById('input-room-code'),
+        btnJoin: document.getElementById('btn-join-room'),
+        btnAI: document.getElementById('btn-ai-play'),
+        statusBar: document.getElementById('status-bar'),
+        btnDraw: document.getElementById('btn-draw'),
+        btnLeave: document.getElementById('btn-leave-game'),
+        btnEndTurn: document.getElementById('btn-end-turn'),
+        oppNameTag: document.getElementById('opp-name-tag'),
+        oppCardsContainer: document.getElementById('opp-cards-container'),
+        playerCardsContainer: document.getElementById('player-cards-container'),
+        discardContainer: document.getElementById('discard-card-container'),
+        headerText: document.getElementById('header-text')
+      };
+
+      // ─── カードの生成・描画ヘルパー ───
+      function createRandomCard() {
+        if (Math.random() < 0.1) {
+          return { color: 'wild', value: 'Wild' };
+        }
+        const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+        const value = VALUES[Math.floor(Math.random() * VALUES.length)];
+        return { color, value };
+      }
+
+      function buildCardDOM(card, isPlayable = false, clickHandler = null) {
+        const div = document.createElement('div');
+        div.className = 'card ' + card.color;
+        
+        let label = card.value;
+        if (card.value === 'Draw2') label = '+2';
+        if (card.value === 'Wild') label = 'W';
+        div.textContent = label;
+
+        if (isPlayable && clickHandler) {
+          div.addEventListener('click', clickHandler);
+        }
+        return div;
+      }
+
+      // ルームUI更新
+      function updateUI() {
+        if (!gameActive) return;
+
+        // 1. 捨て札(場札)の描画
+        DOM.discardContainer.innerHTML = '';
+        if (discardPile.length > 0) {
+          const topCard = discardPile[discardPile.length - 1];
+          const displayCard = { ...topCard };
+          if (topCard.color === 'wild' && activeColor) displayCard.color = activeColor;
+          
+          const discardDOM = buildCardDOM(displayCard);
+          
+          // 出し手に応じたスライドアニメーションの適用
+          if (lastAction === 'play_me') {
+            discardDOM.classList.add('played-anim');
+          } else if (lastAction === 'play_opp') {
+            discardDOM.classList.add('played-opp-anim');
+          }
+          
+          DOM.discardContainer.appendChild(discardDOM);
+        }
+
+        // 2. あなたの手札
+        DOM.playerCardsContainer.innerHTML = '';
+        myHand.forEach((card, idx) => {
+          const playable = isMyTurn && canPlay(card);
+          const dom = buildCardDOM(card, playable, () => playCard(idx));
+          if (!playable) dom.style.opacity = '0.5';
+          
+          // 山札からカードを引いた時のアニメーション適用（最後の1枚）
+          if (lastAction === 'draw' && idx === myHand.length - 1) {
+            dom.classList.add('drawn-anim');
+          }
+          DOM.playerCardsContainer.appendChild(dom);
+        });
+
+        // 3. 相手の手札（裏面表示）
+        DOM.oppCardsContainer.innerHTML = '';
+        const count = isSolo ? oppHand.length : oppHandCount;
+        for (let i = 0; i < count; i++) {
+          const cardBack = document.createElement('div');
+          cardBack.className = 'card-back';
+          cardBack.textContent = 'UNO';
+          DOM.oppCardsContainer.appendChild(cardBack);
+        }
+        DOM.oppNameTag.textContent = oppName + " (手札: " + count + "枚)";
+
+        // 4. ステータス・手番の案内
+        if (isMyTurn) {
+          if (stackedValue !== null) {
+            DOM.statusBar.textContent = "🟢 同数字（" + stackedValue + "）の連続出しが可能です。出さない場合は「ターン終了」を押してください。";
+            DOM.btnDraw.style.pointerEvents = 'none';
+            DOM.btnDraw.style.opacity = '0.5';
+          } else {
+            DOM.statusBar.textContent = "🟢 あなたの手番です。場札に合うカードを出すか、山札から引いてください。";
+            DOM.btnDraw.style.pointerEvents = 'auto';
+            DOM.btnDraw.style.opacity = '1';
+          }
+        } else {
+          DOM.statusBar.textContent = "🔴 " + oppName + " の手番です。相手の操作を待っています...";
+          DOM.btnDraw.style.pointerEvents = 'none';
+          DOM.btnDraw.style.opacity = '0.5';
+        }
+
+        // アニメーションステートのリセット
+        lastAction = null;
+
+        checkGameOver();
+      }
+
+      // ルールチェック
+      function canPlay(card) {
+        if (stackedValue !== null) {
+          return card.value === stackedValue; 
+        }
+        if (discardPile.length === 0) return true;
+        const top = discardPile[discardPile.length - 1];
+        
+        if (card.color === 'wild') return true;
+
+        const topColor = top.color === 'wild' ? activeColor : top.color;
+        if (card.color === topColor) return true;
+
+        if (card.value === top.value) return true;
+
+        return false;
+      }
+
+      // カードを出す
+      function playCard(idx) {
+        if (!isMyTurn) return;
+        const card = myHand.splice(idx, 1)[0];
+        discardPile.push(card);
+
+        // 自分の出し手アニメーションをセット
+        lastAction = 'play_me';
+
+        if (card.color === 'wild') {
+          activeColor = COLORS[Math.floor(Math.random() * COLORS.length)];
+          DOM.statusBar.textContent = "ワイルドが指定されました！次の色は " + activeColor.toUpperCase();
+        } else {
+          activeColor = card.color;
+        }
+
+        // 連続出しチェック
+        const hasMoreSameValue = myHand.some(c => c.value === card.value);
+
+        if (hasMoreSameValue) {
+          stackedValue = card.value;
+          DOM.btnEndTurn.style.display = 'block';
+          updateUI();
+        } else {
+          endMyTurn(card);
+        }
+      }
+
+      // ターン終了処理
+      function endMyTurn(card) {
+        stackedValue = null;
+        DOM.btnEndTurn.style.display = 'none';
+
+        let turnSkip = false;
+        let drawPenalty = 0;
+        if (card.value === 'Skip') turnSkip = true;
+        if (card.value === 'Draw2') drawPenalty = 2;
+
+        isMyTurn = false;
+
+        if (isSolo) {
+          updateUI();
+          if (drawPenalty > 0) {
+            for (let i = 0; i < drawPenalty; i++) oppHand.push(createRandomCard());
+          }
+          if (turnSkip) {
+            isMyTurn = true;
+            setTimeout(updateUI, 1000);
+          } else {
+            setTimeout(aiTurn, 1500);
+          }
+        } else {
+          sendGameState(turnSkip, drawPenalty);
+          updateUI();
+        }
+      }
+
+      // 山札からカードを引く
+      function drawCard() {
+        if (!isMyTurn) return;
+        myHand.push(createRandomCard());
+        
+        // カードを引いたアニメーションをセット
+        lastAction = 'draw';
+
+        isMyTurn = false;
+
+        if (isSolo) {
+          updateUI();
+          setTimeout(aiTurn, 1200);
+        } else {
+          sendGameState(false, 0);
+          updateUI();
+        }
+      }
+
+      // ゲーム終了条件
+      function checkGameOver() {
+        if (!gameActive) return;
+        
+        if (myHand.length === 0) {
+          gameActive = false;
+          isMyTurn = false;
+          DOM.statusBar.textContent = "🏆 あなたの勝利！すべてのカードを出し切りました！";
+          alert("おめでとうございます！あなたの勝利です！");
+        } else if ((isSolo && oppHand.length === 0) || (!isSolo && oppHandCount === 0 && oppId)) {
+          gameActive = false;
+          isMyTurn = false;
+          DOM.statusBar.textContent = "敗北... " + oppName + " が先にカードを出し切りました。";
+          alert("残念... " + oppName + "の勝利です。");
+        }
+      }
+
+      // ─── AI (オフライン) 手番処理 ───
+      function aiTurn() {
+        if (!gameActive) return;
+        
+        let playIdx = -1;
+        for (let i = 0; i < oppHand.length; i++) {
+          if (canPlay(oppHand[i])) {
+            playIdx = i;
+            break;
+          }
+        }
+
+        if (playIdx !== -1) {
+          const card = oppHand.splice(playIdx, 1)[0];
+          discardPile.push(card);
+          
+          // 相手の出し手アニメーションをセット
+          lastAction = 'play_opp';
+
+          let turnSkip = false;
+          let drawPenalty = 0;
+
+          if (card.color === 'wild') {
+            activeColor = COLORS[Math.floor(Math.random() * COLORS.length)];
+          } else {
+            activeColor = card.color;
+          }
+
+          if (card.value === 'Skip') turnSkip = true;
+          if (card.value === 'Draw2') drawPenalty = 2;
+
+          if (drawPenalty > 0) {
+            for (let i = 0; i < drawPenalty; i++) myHand.push(createRandomCard());
+          }
+
+          if (turnSkip) {
+            setTimeout(aiTurn, 1500);
+          } else {
+            isMyTurn = true;
+          }
+        } else {
+          oppHand.push(createRandomCard());
+          // 相手のドロー
+          lastAction = 'draw_opp';
+          isMyTurn = true;
+        }
+
+        updateUI();
+      }
+
+      // ─── Supabaseリアルタイム同期 ───
+      function joinRoom(roomCode) {
+        if (!supabaseClient) return alert("シミュレーターの設定でSupabaseが連携されていないため動作しません。");
+        
+        isSolo = false;
+        DOM.headerText.textContent = "UNO Room: " + roomCode;
+        DOM.lobby.style.display = 'none';
+        DOM.game.style.display = 'flex';
+
+        myHand = Array.from({ length: 7 }, createRandomCard);
+        oppHandCount = 7;
+        discardPile = [{ color: 'red', value: '5' }];
+        activeColor = 'red';
+
+        gameChannel = supabaseClient.channel('uno-' + roomCode);
+        gameChannel
+          .on('broadcast', { event: 'join' }, ({ payload }) => {
+            if (payload.id !== myId) {
+              oppId = payload.id;
+              oppName = payload.name;
+              gameChannel.send({ type: 'broadcast', event: 'welcome', payload: { id: myId, name: myName, handCount: myHand.length, discard: discardPile } });
+              gameActive = true;
+              isMyTurn = true;
+              updateUI();
+            }
+          })
+          .on('broadcast', { event: 'welcome' }, ({ payload }) => {
+            if (payload.id !== myId) {
+              oppId = payload.id;
+              oppName = payload.name;
+              oppHandCount = payload.handCount;
+              discardPile = payload.discard;
+              gameActive = true;
+              isMyTurn = false;
+              updateUI();
+            }
+          })
+          .on('broadcast', { event: 'state' }, ({ payload }) => {
+            if (payload.id !== myId) {
+              // 相手のカード枚数の増減から出し手を判定してアニメーション
+              if (payload.handCount < oppHandCount) {
+                lastAction = 'play_opp';
+              } else if (payload.handCount > oppHandCount) {
+                lastAction = 'draw_opp';
+              }
+              
+              oppHandCount = payload.handCount;
+              discardPile = payload.discard;
+              activeColor = payload.activeColor;
+
+              if (payload.drawPenalty > 0) {
+                for (let i = 0; i < payload.drawPenalty; i++) {
+                  myHand.push(createRandomCard());
+                }
+              }
+
+              if (payload.turnSkip) {
+                isMyTurn = false;
+                gameChannel.send({
+                  type: 'broadcast',
+                  event: 'state',
+                  payload: { id: myId, handCount: myHand.length, discard: discardPile, activeColor: activeColor, turnSkip: false, drawPenalty: 0, myTurnNext: true }
+                });
+              } else if (payload.myTurnNext || !payload.turnSkip) {
+                isMyTurn = true;
+              }
+
+              updateUI();
+            }
+          })
+          .on('broadcast', { event: 'leave' }, () => {
+            alert("対戦相手が退出しました。");
+            leaveGame();
+          })
+          .subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+              gameChannel.send({ type: 'broadcast', event: 'join', payload: { id: myId, name: myName } });
+            }
+          });
+      }
+
+      function sendGameState(turnSkip = false, drawPenalty = 0) {
+        if (!gameChannel) return;
+        gameChannel.send({
+          type: 'broadcast',
+          event: 'state',
+          payload: {
+            id: myId,
+            handCount: myHand.length,
+            discard: discardPile,
+            activeColor: activeColor,
+            turnSkip: turnSkip,
+            drawPenalty: drawPenalty,
+            myTurnNext: false
+          }
+        });
+      }
+
+      function startAIGame() {
+        isSolo = true;
+        oppName = "AI対戦相手";
+        DOM.headerText.textContent = "We talks UNO (vs AI)";
+        DOM.lobby.style.display = 'none';
+        DOM.game.style.display = 'flex';
+
+        myHand = Array.from({ length: 7 }, createRandomCard);
+        oppHand = Array.from({ length: 7 }, createRandomCard);
+        discardPile = [{ color: 'blue', value: '7' }];
+        activeColor = 'blue';
+
+        gameActive = true;
+        isMyTurn = true;
+
+        updateUI();
+      }
+
+      function leaveGame() {
+        if (gameChannel) {
+          gameChannel.send({ type: 'broadcast', event: 'leave', payload: { id: myId } });
+          supabaseClient.removeChannel(gameChannel);
+          gameChannel = null;
+        }
+        isSolo = false;
+        gameActive = false;
+        DOM.lobby.style.display = 'flex';
+        DOM.game.style.display = 'none';
+        DOM.headerText.textContent = "We talks UNO";
+      }
+
+      // ─── イベント登録 ───
+      DOM.btnJoin.addEventListener('click', () => {
+        const code = DOM.roomCode.value.trim();
+        if (code) joinRoom(code);
+      });
+      DOM.btnAI.addEventListener('click', startAIGame);
+      DOM.btnLeave.addEventListener('click', leaveGame);
+      DOM.btnDraw.addEventListener('click', drawCard);
+      
+      // 連続出し（スタック状態）を終了して相手にターンを渡すイベント
+      DOM.btnEndTurn.addEventListener('click', () => {
+        if (stackedValue !== null) {
+          const lastCard = discardPile[discardPile.length - 1];
+          endMyTurn(lastCard);
+        }
+      });
+
+    })();
+  \x3C\x2Fscript\x3E
+</body>
+</html>
+`;
+
+  // ─── DOM要素参照 ───
+  const DOMElements = {
+    body: document.body,
+    tabBar: document.getElementById('tab-bar'),
+    newTabBtn: document.getElementById('new-tab-btn'),
+    contentEl: document.getElementById('content-area'),
+    leftPane: document.getElementById('left-pane'), // 100%確実に崩壊を防ぐためキャッシュ化
+    urlBar: document.getElementById('url-bar'),
+    urlLock: document.getElementById('url-bar-lock'),
+    btnBack: document.getElementById('btn-back'),
+    btnFwd: document.getElementById('btn-fwd'),
+    btnReload: document.getElementById('btn-reload'),
+    loadingBar: document.getElementById('loading-bar'),
+    btnConsole: document.getElementById('btn-console'),
+    consolePanel: document.getElementById('console-panel'),
+    consoleBody: document.getElementById('console-body'),
+    consoleInput: document.getElementById('console-input'),
+    consoleRun: document.getElementById('console-run-btn'),
+    btnSettings: document.getElementById('btn-settings'),
+    settingsPanel: document.getElementById('settings-panel'),
+    btnSplit: document.getElementById('btn-split'),
+    rightPane: document.getElementById('right-pane'),
+    splitChatFrame: document.getElementById('split-chat-frame')
+  };
+
+  /* ─── 状態変数 ─── */
+  let tabs = [], activeId = null, idCounter = 0;
+  let isSplitActive = false; // 画面分割ステート
+
+  // ─── 設定管理 ────────────────────────────────────────────────────────
+  const I18N = {
+    ja: { 'settings.title': '設定', 'settings.theme.title': 'テーマ', 'settings.theme.dark': 'ダーク', 'settings.theme.light': 'ライト', 'settings.layout.title': 'タブバーの配置', 'settings.layout.horizontal': '水平 (上)', 'settings.layout.vertical': '垂直 (左)', 'settings.language.title': '言語', 'settings.fontsize.title': '文字の大きさ', 'settings.fontsize.small': '小', 'settings.fontsize.medium': '中', 'settings.fontsize.large': '大' },
+    en: { 'settings.title': 'Settings', 'settings.theme.title': 'Theme', 'settings.theme.dark': 'Dark', 'settings.theme.light': 'Light', 'settings.layout.title': 'Tab Bar Layout', 'settings.layout.horizontal': 'Horizontal (Top)', 'settings.layout.vertical': 'Vertical (Left)', 'settings.language.title': 'Language', 'settings.fontsize.title': 'Font Size', 'settings.fontsize.small': 'Small', 'settings.fontsize.medium': 'Medium', 'settings.fontsize.large': 'Large' }
+  };
+
+  let settings = {
+    theme: 'dark', tabLayout: 'horizontal', language: 'ja', fontSize: 'medium'
+  };
+
+  function applySettings() {
+    DOMElements.body.classList.toggle('theme-light', settings.theme === 'light');
+    DOMElements.body.classList.toggle('layout-vertical', settings.tabLayout === 'vertical');
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const key = el.dataset.i18n;
+      el.textContent = I18N[settings.language][key] || key;
+    });
+    DOMElements.body.dataset.fontSize = settings.fontSize;
+  }
+
+  function saveSettings() {
+    localStorage.setItem('my_browser_settings', JSON.stringify(settings));
+  }
+
+  function loadSettings() {
+    const saved = localStorage.getItem('my_browser_settings');
+    if (saved) {
+      settings = { ...settings, ...JSON.parse(saved) };
+    }
+    document.querySelector(`input[name="theme"][value="${settings.theme}"]`).checked = true;
+    document.querySelector(`input[name="tab-layout"][value="${settings.tabLayout}"]`).checked = true;
+    document.getElementById('language-select').value = settings.language;
+    document.querySelector(`input[name="font-size"][value="${settings.fontSize}"]`).checked = true;
+    
+    applySettings();
+  }
+  
+  // ─── コマンドライン ───────────────────────────────────────────────────────
+  function writeToConsole(text, isError = false) {
+    const span = document.createElement("div");
+    span.style.color = isError ? "#ff3333" : "#00ff66";
+    span.textContent = text;
+    DOMElements.consoleBody.appendChild(span);
+    DOMElements.consoleBody.scrollTop = DOMElements.consoleBody.scrollHeight;
+  }
+
+  function executeCommand(input) {
+    const cmd = input.trim().toLowerCase();
+    if (!cmd) return;
+    writeToConsole(`> ${input}`);
+
+    if (cmd === 'this web in my book') {
+        const activeTab = tabs.find(t => t.id === activeId);
+        if (!activeTab || !activeTab.url) return void writeToConsole("エラー: 現在有効なWebページが開かれていません。", true);
+        const bookmarks = getBookmarks();
+        if (bookmarks.some(b => b.url === activeTab.url)) return void writeToConsole(`案内: すでに登録されています: ${activeTab.title}`);
+        bookmarks.push({ label: activeTab.title, url: activeTab.url, icon: getFavicon(activeTab.url) });
+        saveBookmarks(bookmarks);
+        DOMElements.contentEl.querySelectorAll(".nt-page").forEach(page => {
+          const tid = +page.getAttribute("data-tabid");
+          renderShortcuts(page, tid);
+        });
+        writeToConsole(`成功: お気に入りに追加しました: "${activeTab.title}"`);
+    } else if (cmd === 'view-source') {
+        const activeTab = tabs.find(t => t.id === activeId);
+        if (!activeTab || !activeTab.url) return void writeToConsole("エラー: 開いているWebページがありません。", true);
+        const iframe = DOMElements.leftPane.querySelector(`iframe[data-tabid="${activeId}"]`);
+        if (!iframe) return void writeToConsole("エラー: ソースを取得可能なフレームが存在しません。", true);
+        try {
+          if (iframe.contentDocument && iframe.contentDocument.documentElement) {
+            const htmlCode = iframe.contentDocument.documentElement.outerHTML;
+            writeToConsole(`--- ${activeTab.url} のコード ---`);
+            writeToConsole(htmlCode);
+            writeToConsole("--- コード表示終了 ---");
+          } else throw new Error("CORS restriction");
+        } catch (e) {
+          writeToConsole(`[セキュリティ制限(CORS)により取得不可]\n現在のWebページ (${activeTab.url}) は外部ドメインであるため、ブラウザのセキュリティ仕様により中身のコードをJavaScriptで直接覗き見ることができません。`, true);
+        }
+    } else if (cmd === 'this browser-version') {
+        writeToConsole(`Browser Version: ${BROWSER_VERSION}`);
+    } else if (cmd === 'clear') {
+        DOMElements.consoleBody.innerHTML = '';
+    } else if (cmd === 'help command ? -a') {
+        writeToConsole(`使用可能なコマンド:\n  This web in my book   - 現在のページをお気に入りに追加\n  view-source           - 現在ページのソースコードを表示 (CORS制限あり)\n  this browser-version  - バージョン情報を表示\n  clear                 - コンソール画面をクリア\n  Help command ? -a     - このヘルプメッセージを表示`);
+    } else {
+      writeToConsole(`エラー: 未知のコマンド "${cmd}" です。コマンド一覧を調べるには 'Help command ? -a' と入力してください。`, true);
+    }
+    DOMElements.consoleInput.value = '';
+  }
+
+  // ─── お気に入り ──────────────────────────────────────────────────────────
+  function getBookmarks() {
+    const data = localStorage.getItem("my_browser_bookmarks");
+    return data ? JSON.parse(data) : [
+      { label: "取扱説明書", url: "https://guide.info", icon: "ℹ️" },
+      { label: "Wikipedia", url: "https://ja.wikipedia.org", icon: "📖" },
+      { label: "We talks", url: "https://wetalks.chat", icon: "💬" },
+      { label: "ヨットゲーム", url: "https://yacht.game", icon: "🎲" },
+      { label: "UNOゲーム", url: "https://uno.game", icon: "🃏" }
+    ];
+  }
+  function saveBookmarks(bms) {
+    localStorage.setItem("my_browser_bookmarks", JSON.stringify(bms));
+  }
+  const FAVICON_MAP = { "wikipedia.org": "📖", "reddit.com": "📰", "amazon.co.jp": "📦", "amazon.com": "📦", "wetalks.chat": "💬", "yacht.game": "🎲", "uno.game": "🃏", "guide.info": "ℹ️" };
+  function getFavicon(url) {
+    try {
+      const host = (new URL(url)).hostname.replace(/^www\./, "");
+      for (const [k, v] of Object.entries(FAVICON_MAP)) if (host.includes(k)) return v;
+    } catch (_) {}
+    return "🌐";
+  }
+
+  // ─── 履歴管理 & 画面描画 ───────────────────────────────────────────────────
+  function normalise(raw) {
+    raw = raw.trim();
+    if (!raw) return null;
+    if (/^https?:\/\//i.test(raw)) return raw;
+    if (/\s/.test(raw) || !/\./.test(raw)) {
+      return "https://www.bing.com/search?q=" + encodeURIComponent(raw);
+    }
+    return "https://" + raw;
+  }
+
+  function getSearchUrl(category, query) {
+    const encoded = encodeURIComponent(query);
+    switch (category) {
+      case 'images':
+        return "https://www.bing.com/images/search?q=" + encoded;
+      case 'videos':
+        return "https://www.bing.com/videos/search?q=" + encoded;
+      case 'maps':
+        return "https://www.bing.com/maps/search?q=" + encoded;
+      case 'all':
+      default:
+        return "https://www.bing.com/search?q=" + encoded;
+    }
+  }
+
+  let loadRAF = null;
+  function startLoading() {
+    let progress = 0;
+    function step() {
+      progress += (100 - progress) * 0.06;
+      DOMElements.loadingBar.style.width = Math.min(progress, 90) + "%";
+      if (progress < 89) loadRAF = requestAnimationFrame(step);
+    }
+    DOMElements.loadingBar.style.transition = "none";
+    DOMElements.loadingBar.style.width = "0%";
+    void DOMElements.loadingBar.offsetWidth;
+    DOMElements.loadingBar.style.transition = "width 0.25s ease";
+    loadRAF = requestAnimationFrame(step);
+  }
+
+  function finishLoading() {
+    cancelAnimationFrame(loadRAF);
+    DOMElements.loadingBar.style.width = "100%";
+    setTimeout(() => { DOMElements.loadingBar.style.width = "0%"; }, 400);
+  }
+
+  function renderShortcuts(ntPageEl, tabId) {
+    const sc = ntPageEl.querySelector(".shortcuts");
+    if (!sc) return;
+    sc.innerHTML = "";
+    const currentBookmarks = getBookmarks();
+    if (currentBookmarks.length === 0) {
+      const placeholder = document.createElement("div");
+      placeholder.style.fontSize = "12px";
+      placeholder.style.color = "var(--text-dim)";
+      placeholder.textContent = "お気に入りは登録されていません。";
+      sc.appendChild(placeholder);
+      return;
+    }
+    currentBookmarks.forEach((s, idx) => {
+      const btn = document.createElement("div");
+      btn.className = "shortcut";
+      btn.setAttribute("role", "button");
+      btn.setAttribute("tabindex", "0");
+      btn.setAttribute("aria-label", s.label + "を開く");
+      
+      const ico = document.createElement("div");
+      ico.className = "shortcut-icon";
+      ico.textContent = s.icon;
+      
+      const lbl = document.createElement("div");
+      lbl.textContent = s.label;
+      lbl.className = "shortcut-label";
+      
+      // 削除ボタン (×) の作成
+      const delBtn = document.createElement("button");
+      delBtn.className = "shortcut-delete-btn";
+      delBtn.innerHTML = "&times;";
+      delBtn.title = "お気に入りを削除";
+      delBtn.addEventListener("click", e => {
+        e.stopPropagation(); // 親のクリックイベント（ページ移動）を抑制！
+        if (confirm("お気に入り「" + s.label + "」を削除しますか？")) {
+          deleteBookmarkByIndex(idx);
+        }
+      });
+      
+      btn.appendChild(ico);
+      btn.appendChild(lbl);
+      btn.appendChild(delBtn); // 追加
+      
+      const go = () => navigateTo(tabId, s.url);
+      btn.addEventListener("click", go);
+      btn.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") go(); });
+      sc.appendChild(btn);
+    });
+  }
+
+  function deleteBookmarkByIndex(index) {
+    const current = getBookmarks();
+    current.splice(index, 1);
+    saveBookmarks(current);
+    
+    // 現在開いているすべての新しいタブページのショートカットリストを再描画
+    DOMElements.leftPane.querySelectorAll(".nt-page").forEach(page => {
+      const tid = +page.getAttribute("data-tabid");
+      renderShortcuts(page, tid);
+    });
+  }
+
+  function buildNTPage(tabId) {
+    const el = document.createElement("div");
+    el.className = "nt-page";
+    el.setAttribute("data-tabid", tabId);
+    el.setAttribute("role", "tabpanel");
+    const heading = document.createElement("div");
+    heading.className = "nt-heading";
+    heading.textContent = "新しいタブ";
+
+    const catContainer = document.createElement("div");
+    catContainer.className = "nt-categories";
+    const categories = [
+      { id: 'all', label: 'すべて' },
+      { id: 'images', label: '画像' },
+      { id: 'videos', label: '動画' },
+      { id: 'maps', label: 'マップ' }
+    ];
+    let activeCategory = 'all';
+
+    const searchWrap = document.createElement("div");
+    searchWrap.className = "nt-search-wrap";
+    const searchIcon = document.createElement("span");
+    searchIcon.className = "nt-search-icon";
+    searchIcon.textContent = "🔍";
+    searchIcon.setAttribute("aria-hidden", "true");
+    const searchInput = document.createElement("input");
+    searchInput.type = "text";
+    searchInput.className = "nt-search";
+    searchInput.placeholder = "Bing で検索、またはURLを入力";
+    searchInput.setAttribute("aria-label", "検索またはURLを入力");
+
+    categories.forEach(cat => {
+      const catBtn = document.createElement("button");
+      catBtn.className = "nt-cat-btn" + (cat.id === activeCategory ? " active" : "");
+      catBtn.textContent = cat.label;
+      catBtn.addEventListener("click", () => {
+        catContainer.querySelectorAll(".nt-cat-btn").forEach(b => b.classList.remove("active"));
+        catBtn.classList.add("active");
+        activeCategory = cat.id;
+        
+        const query = searchInput.value.trim();
+        if (query) {
+          navigateTo(tabId, getSearchUrl(activeCategory, query));
+        }
+      });
+      catContainer.appendChild(catBtn);
+    });
+
+    searchInput.addEventListener("keydown", e => {
+      if (e.key === "Enter") {
+        const query = searchInput.value.trim();
+        if (query) navigateTo(activeId, getSearchUrl(activeCategory, query));
+      }
+    });
+
+    const hint = document.createElement("div");
+    hint.className = "nt-hint";
+    hint.textContent = "Enter キーで移動";
+    const sc = document.createElement("div");
+    sc.className = "shortcuts";
+    searchWrap.appendChild(searchIcon);
+    searchWrap.appendChild(searchInput);
+    el.appendChild(heading);
+    el.appendChild(catContainer);
+    el.appendChild(searchWrap);
+    el.appendChild(hint);
+    el.appendChild(sc);
+    renderShortcuts(el, tabId);
+    return el;
+  }
+
+  function buildErrorPage(tabId, url) {
+    const el = document.createElement("div");
+    el.className = "error-page";
+    el.setAttribute("data-tabid", tabId);
+    el.innerHTML = `
+      <div class="err-icon">🔌</div>
+      <div class="err-title">ページを表示できませんでした</div>
+      <div class="err-desc">
+        <strong>${url}</strong> に接続できませんでした。<br>
+        URLを確認するか、別のサイトをお試しください。<br>
+        ※ セキュリティ制限により、一部のサイトはiframe内では表示できません。
+      </div>
+      <button class="err-retry">再試行</button>
+    `;
+    el.querySelector(".err-retry").addEventListener("click", () => navigateTo(tabId, url));
+    return el;
+  }
+
+  function renderTabs() {
+    DOMElements.tabBar.querySelectorAll(".tab").forEach(e => e.remove());
+    tabs.forEach(tab => {
+      const el = document.createElement("div");
+      el.className = "tab" + (tab.id === activeId ? " active" : "");
+      el.setAttribute("role", "tab");
+      el.setAttribute("aria-selected", tab.id === activeId ? "true" : "false");
+      el.setAttribute("data-id", tab.id);
+      el.title = tab.title;
+      const fav = document.createElement("span");
+      fav.className = "tab-favicon";
+      fav.setAttribute("aria-hidden", "true");
+      fav.textContent = tab.favicon;
+      const title = document.createElement("span");
+      title.className = "tab-title";
+      title.textContent = tab.title;
+      const close = document.createElement("span");
+      close.className = "tab-close";
+      close.setAttribute("role", "button");
+      close.setAttribute("aria-label", "タブを閉じる");
+      close.innerHTML = "&times;";
+      close.addEventListener("click", e => {
+        e.stopPropagation();
+        closeTab(tab.id);
+      });
+      el.appendChild(fav);
+      el.appendChild(title);
+      el.appendChild(close);
+      el.addEventListener("click", () => activateTab(tab.id));
+      DOMElements.tabBar.insertBefore(el, DOMElements.newTabBtn);
+    });
+  }
+
+  function showPage(tabId) {
+    DOMElements.leftPane.querySelectorAll("[data-tabid]").forEach(p => {
+      p.classList.toggle("active", +p.getAttribute("data-tabid") === tabId);
+    });
+  }
+
+  function updateUrlBar(tab) {
+    if (tab) {
+      DOMElements.urlBar.value = tab.url || "";
+      DOMElements.urlLock.textContent = tab.url && tab.url.startsWith("https://") ? "🔒" : "🌐";
+    } else {
+      DOMElements.urlBar.value = "";
+      DOMElements.urlLock.textContent = "🌐";
+    }
+  }
+
+  function updateNav(tab) {
+    if (tab) {
+      DOMElements.btnBack.disabled = tab.histIdx <= 0;
+      DOMElements.btnFwd.disabled = tab.histIdx >= tab.history.length - 1;
+    } else {
+      DOMElements.btnBack.disabled = true;
+      DOMElements.btnFwd.disabled = true;
+    }
+  }
+
+  // ─── 【重要】ゲーム起動時のみに画面分割を完全自動トリガーする関数 ───
+  function checkAndApplySplitScreen(tab) {
+    if (tab && (tab.url === 'https://yacht.game' || tab.url === 'https://uno.game' || tab.url === 'http://yacht.game' || tab.url === 'http://uno.game')) {
+      isSplitActive = true;
+      DOMElements.body.classList.add('split-active');
+      if (!DOMElements.splitChatFrame.srcdoc) {
+        DOMElements.splitChatFrame.srcdoc = CHAT_APP_HTML;
+      }
+    } else {
+      isSplitActive = false;
+      DOMElements.body.classList.remove('split-active');
+      DOMElements.splitChatFrame.srcdoc = '';
+    }
+  }
+
+  function activateTab(id) {
+    activeId = id;
+    showPage(id);
+    const tab = tabs.find(t => t.id === id);
+    updateUrlBar(tab);
+    updateNav(tab);
+    renderTabs();
+    checkAndApplySplitScreen(tab); // タブ切り替え時の自動判定
+  }
+
+  function openTab(url) {
+    const id = ++idCounter;
+    // 履歴管理用変数のタイポを修正 (histIdx)
+    const tab = { id: id, title: "新しいタブ", favicon: "🌐", url: null, history: [], histIdx: -1 };
+    tabs.push(tab);
+    const ntPage = buildNTPage(id);
+    DOMElements.leftPane.appendChild(ntPage);
+    activateTab(id);
+    if (url) setTimeout(() => navigateTo(id, url), 0);
+  }
+
+  function closeTab(id) {
+    const idx = tabs.findIndex(t => t.id === id);
+    if (idx !== -1) {
+      tabs.splice(idx, 1);
+      DOMElements.contentEl.querySelectorAll(`[data-tabid="${id}"]`).forEach(e => e.remove());
+      if (tabs.length === 0) {
+        openTab(null);
+      } else if (activeId === id) {
+        activateTab(tabs[Math.min(idx, tabs.length - 1)].id);
+      } else {
+        renderTabs();
+      }
+    }
+  }
+
+  function navigateTo(tabId, url) {
+    const tab = tabs.find(t => t.id === tabId);
+    if (!tab) return;
+
+    if (tab.history[tab.histIdx] !== url) {
+      tab.history = tab.history.slice(0, tab.histIdx + 1);
+      tab.history.push(url);
+      tab.histIdx = tab.history.length - 1;
+    }
+    
+    tab.url = url;
+    tab.favicon = getFavicon(url);
+    try {
+      tab.title = (new URL(url)).hostname.replace(/^www\./, "") || url;
+    } catch (_) {
+      tab.title = url;
+    }
+
+    if (activeId === tabId) {
+      updateUrlBar(tab);
+      updateNav(tab);
+    }
+
+    DOMElements.leftPane.querySelectorAll(`[data-tabid="${tabId}"]`).forEach(e => e.remove());
+    startLoading();
+
+    const iframe = document.createElement("iframe");
+    iframe.className = "page-frame" + (activeId === tabId ? " active" : "");
+    iframe.setAttribute("data-tabid", tabId);
+    
+    // 【各種仮想アドレスのルーティング定義】
+    if (url === 'https://wetalks.chat' || url === 'http://wetalks.chat') {
+      iframe.setAttribute("title", "We talks");
+      iframe.srcdoc = CHAT_APP_HTML;
+      finishLoading();
+    } else if (url === 'https://yacht.game' || url === 'http://yacht.game') {
+      iframe.setAttribute("title", "ヨットゲーム");
+      iframe.srcdoc = YACHT_GAME_HTML;
+      finishLoading();
+    } else if (url === 'https://uno.game' || url === 'http://uno.game') {
+      iframe.setAttribute("title", "UNOゲーム");
+      iframe.srcdoc = UNO_GAME_HTML;
+      finishLoading();
+    } else if (url === 'https://guide.info' || url === 'http://guide.info') {
+      iframe.setAttribute("title", "Browser取扱説明書");
+      iframe.srcdoc = GUIDE_PAGE_HTML;
+      finishLoading();
+    } else {
+      iframe.setAttribute("title", tab.title);
+      iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation");
+      iframe.src = url;
+
+      iframe.addEventListener("load", () => {
+        finishLoading();
+        try {
+          const currentIframeUrl = iframe.contentWindow.location.href;
+          if (currentIframeUrl && currentIframeUrl !== 'about:blank' && tab.url !== currentIframeUrl) {
+            tab.history = tab.history.slice(0, tab.histIdx + 1);
+            tab.history.push(currentIframeUrl);
+            tab.histIdx = tab.history.length - 1;
+            tab.url = currentIframeUrl;
+            if (activeId === tabId) {
+              updateUrlBar(tab);
+              updateNav(tab);
+            }
+          }
+          
+          const t = iframe.contentDocument && iframe.contentDocument.title;
+          if (t) { tab.title = t; renderTabs(); }
+        } catch (_) {}
+      });
+
+      iframe.addEventListener("error", () => {
+        finishLoading();
+        iframe.remove();
+        const err = buildErrorPage(tabId, url);
+        if (activeId === tabId) err.classList.add("active");
+        DOMElements.leftPane.appendChild(err);
+      });
+    }
+
+    DOMElements.leftPane.appendChild(iframe);
+    renderTabs();
+    if (activeId === tabId) {
+      checkAndApplySplitScreen(tab); // ページ遷移時の自動画面分割判定
+    }
+  }
+
+  function historyGo(delta) {
+    const tab = tabs.find(t => t.id === activeId);
+    if (!tab) return;
+    const next = tab.histIdx + delta;
+    if (next >= 0 && next < tab.history.length) {
+      tab.histIdx = next;
+      const url = tab.history[next];
+      tab.url = url;
+      tab.favicon = getFavicon(url);
+      try {
+        tab.title = (new URL(url)).hostname.replace(/^www\./, "");
+      } catch (_) {}
+
+      updateUrlBar(tab);
+      updateNav(tab);
+      renderTabs();
+
+      DOMElements.leftPane.querySelectorAll(`[data-tabid="${activeId}"]`).forEach(e => e.remove());
+      startLoading();
+
+      const iframe = document.createElement("iframe");
+      iframe.className = "page-frame active";
+      iframe.setAttribute("data-tabid", activeId);
+
+      if (url === 'https://wetalks.chat' || url === 'http://wetalks.chat') {
+        iframe.srcdoc = CHAT_APP_HTML;
+        finishLoading();
+      } else if (url === 'https://yacht.game' || url === 'http://yacht.game') {
+        iframe.srcdoc = YACHT_GAME_HTML;
+        finishLoading();
+      } else if (url === 'https://uno.game' || url === 'http://uno.game') {
+        iframe.srcdoc = UNO_GAME_HTML;
+        finishLoading();
+      } else if (url === 'https://guide.info' || url === 'http://guide.info') {
+        iframe.srcdoc = GUIDE_PAGE_HTML;
+        finishLoading();
+      } else {
+        iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation");
+        iframe.src = url;
+        iframe.addEventListener("load", () => {
+          finishLoading();
+          try {
+            const t = iframe.contentDocument && iframe.contentDocument.title;
+            if (t) { tab.title = t; renderTabs(); }
+          } catch (_) {}
+        });
+      }
+      DOMElements.leftPane.appendChild(iframe);
+      checkAndApplySplitScreen(tab); // 履歴移動時の自動画面分割判定
+    }
+  }
+
+  // ─── イベントリスナー ────────────────────────────────────────────────────────
+  DOMElements.newTabBtn.addEventListener('click', () => openTab(null));
+  DOMElements.urlBar.addEventListener('keydown', e => {
+    if (e.key === 'Enter') navigateTo(activeId, normalise(DOMElements.urlBar.value));
+  });
+  
+  DOMElements.btnBack.addEventListener('click', () => historyGo(-1));
+  DOMElements.btnFwd.addEventListener('click', () => historyGo(1));
+  
+  DOMElements.btnReload.addEventListener('click', () => {
+    const iframe = DOMElements.leftPane.querySelector(`iframe[data-tabid="${activeId}"]`);
+    if (iframe) {
+      startLoading();
+      if (iframe.srcdoc) {
+        const temp = iframe.srcdoc;
+        iframe.srcdoc = '';
+        void iframe.offsetWidth;
+        iframe.srcdoc = temp;
+        finishLoading();
+      } else {
+        iframe.src = iframe.src;
+      }
+    }
+  });
+
+  // 設定パネル関係
+  DOMElements.btnSettings.addEventListener('click', () => DOMElements.settingsPanel.classList.toggle('active'));
+  DOMElements.settingsPanel.querySelector('.settings-close').addEventListener('click', () => DOMElements.settingsPanel.classList.remove('active'));
+  DOMElements.settingsPanel.addEventListener('change', e => {
+    const { name, value, type, checked } = e.target;
+    if (type === 'radio' && !checked) return;
+    if (name === 'theme') settings.theme = value;
+    if (name === 'tab-layout') settings.tabLayout = value;
+    if (name === 'font-size') settings.fontSize = value;
+    if (e.target.id === 'language-select') settings.language = value;
+    saveSettings();
+    applySettings();
+  });
+
+  // コンソール関係
+  DOMElements.btnConsole.addEventListener('click', () => {
+    DOMElements.consolePanel.classList.toggle('active');
+    if (DOMElements.consolePanel.classList.contains('active')) DOMElements.consoleInput.focus();
+  });
+  DOMElements.consolePanel.querySelector('.settings-close').addEventListener('click', () => DOMElements.consolePanel.classList.remove('active'));
+  DOMElements.consoleInput.addEventListener('keydown', e => { if (e.key === 'Enter') executeCommand(DOMElements.consoleInput.value); });
+  DOMElements.consoleRun.addEventListener('click', () => executeCommand(DOMElements.consoleInput.value));
+
+  // ─── キーボードショートカット ───
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 't') { e.preventDefault(); openTab(null); }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'w') { e.preventDefault(); closeTab(activeId); }
+    if ((e.altKey) && e.key === 'ArrowLeft')  { e.preventDefault(); historyGo(-1); }
+    if ((e.altKey) && e.key === 'ArrowRight') { e.preventDefault(); historyGo(1); }
+    if (e.key === 'F5') { e.preventDefault(); DOMElements.btnReload.click(); }
+    if (e.key === 'F6' || ((e.ctrlKey || e.metaKey) && e.key === 'l')) {
+      e.preventDefault(); DOMElements.urlBar.focus(); DOMElements.urlBar.select();
+    }
+  });
+
+  // ─── 初期処理 ───
+  loadSettings();
+  openTab('https://guide.info'); // 初期起動時にマニュアル(取扱説明書)を自動表示
+
+})();
+</script>
+</body>
+</html>
