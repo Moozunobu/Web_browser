@@ -608,7 +608,7 @@
     <div class="card" style="margin-bottom: 40px;">
       <div class="card-title">🛠 デベロッパーコマンド</div>
       <ul>
-        <li>ツールバーの <strong>🔧ボタン</strong> または <strong>F12キー</strong> を押すとデベロッパーコンソールが立ち上がります。以下のコマンドを入力して実行可能です。</li>
+        <li>ツールバー of <strong>🔧ボタン</strong> または <strong>F12キー</strong> を押すとデベロッパーコンソールが立ち上がります。以下のコマンドを入力して実行可能です。</li>
         <li><code>this web in my book</code> : 現在開いているWebページをお気に入り（ショートカット）に追加します。</li>
         <li><code>view-source</code> : 現在ページのHTMLソースを表示します。</li>
         <li><code>clear</code> : ログ画面をきれいに掃除します。</li>
@@ -622,7 +622,6 @@
 `;
 
   // ─── [We talks チャットアプリ] 仮想ソースコードの定義 ───────────────────────
-  // ブラウザのHTMLパーサによる誤認識を避けるため、すべてのscript閉じタグを「\x3C\x2Fscript\x3E」(スラッシュもエスケープ)で完全安全記述
   const CHAT_APP_HTML = `
 <!DOCTYPE html>
 <html lang="ja">
@@ -1657,21 +1656,59 @@
     .btn:hover { background: #05b042; }
     .btn.secondary { background: #64748b; }
     .btn.secondary:hover { background: #475569; }
+    .btn:disabled { background: #475569; opacity: 0.5; cursor: default; }
 
     /* ─── ヨットゲームボード ─── */
     .game-board { display: flex; flex-direction: row; gap: 12px; flex: 1; overflow: hidden; }
     .board-left { flex: 1.2; display: flex; flex-direction: column; gap: 12px; }
     .board-right { flex: 0.8; background: var(--panel); border-radius: 8px; padding: 10px; overflow-y: auto; font-size: 12px; }
     
-    /* ダイスエリア */
-    .dice-container { display: flex; gap: 8px; justify-content: center; padding: 10px 0; }
-    .dice {
-      width: 48px; height: 48px; background: white; color: #1e293b; border-radius: 8px;
-      font-size: 24px; font-weight: bold; display: flex; align-items: center; justify-content: center;
-      cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.2); border: 3px solid transparent;
-      user-select: none; transition: transform 0.1s;
+    /* 3D ダイスエリア */
+    .dice-container { display: flex; gap: 12px; justify-content: center; padding: 15px 0; flex-wrap: wrap; }
+    
+    .die-scene {
+      width: 50px;
+      height: 50px;
+      perspective: 300px;
+      cursor: pointer;
     }
-    .dice.kept { border-color: #ea580c; background: #ffedd5; transform: scale(0.95); }
+    .die-cube {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      transform-style: preserve-3d;
+      transition: transform 0.8s cubic-bezier(0.2, 0.8, 0.3, 1);
+    }
+    .die-face {
+      position: absolute;
+      width: 50px;
+      height: 50px;
+      background: #ffffff;
+      border: 2px solid #cbd5e1;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 26px;
+      font-weight: bold;
+      color: #1e293b;
+      box-shadow: inset 0 0 6px rgba(0,0,0,0.15), 0 2px 4px rgba(0,0,0,0.1);
+      backface-visibility: hidden;
+    }
+    /* 3Dの各面を空間に配置（1辺が50pxなので中心からZ軸に25px押し出す） */
+    .die-face.f1 { transform: rotateY(0deg) translateZ(25px); }
+    .die-face.f6 { transform: rotateY(180deg) translateZ(25px); }
+    .die-face.f3 { transform: rotateY(90deg) translateZ(25px); }
+    .die-face.f4 { transform: rotateY(-90deg) translateZ(25px); }
+    .die-face.f2 { transform: rotateX(90deg) translateZ(25px); }
+    .die-face.f5 { transform: rotateX(-90deg) translateZ(25px); }
+
+    /* キープ（選択）時のハイライトスタイル */
+    .die-scene.kept .die-face {
+      border: 3px solid #f97316;
+      background: #fff7ed;
+      box-shadow: inset 0 0 6px rgba(249, 115, 22, 0.2), 0 3px 6px rgba(249, 115, 22, 0.3);
+    }
     
     /* 得点表 */
     .score-table { width: 100%; border-collapse: collapse; text-align: left; margin-top: 4px; }
@@ -1685,7 +1722,7 @@
     
     .game-status-bar { padding: 8px; background: rgba(0,0,0,0.15); border-radius: 6px; font-size: 13px; text-align: center; font-weight: bold; }
   </style>
-  \x3Cscript src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"\x3E\x3C\x2Fscript\x3E
+  \x3Cscript src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"\x3E\x3C/script\x3E
 </head>
 <body>
 
@@ -1710,11 +1747,56 @@
         <div class="game-status-bar" id="status-bar">対戦相手を待っています...</div>
         
         <div class="dice-container" id="dice-container">
-          <div class="dice" data-idx="0">⚀</div>
-          <div class="dice" data-idx="1">⚀</div>
-          <div class="dice" data-idx="2">⚀</div>
-          <div class="dice" data-idx="3">⚀</div>
-          <div class="dice" data-idx="4">⚀</div>
+          <div class="die-scene" data-idx="0">
+            <div class="die-cube">
+              <div class="die-face f1">⚀</div>
+              <div class="die-face f2">⚁</div>
+              <div class="die-face f3">⚂</div>
+              <div class="die-face f4">⚃</div>
+              <div class="die-face f5">⚄</div>
+              <div class="die-face f6">⚅</div>
+            </div>
+          </div>
+          <div class="die-scene" data-idx="1">
+            <div class="die-cube">
+              <div class="die-face f1">⚀</div>
+              <div class="die-face f2">⚁</div>
+              <div class="die-face f3">⚂</div>
+              <div class="die-face f4">⚃</div>
+              <div class="die-face f5">⚄</div>
+              <div class="die-face f6">⚅</div>
+            </div>
+          </div>
+          <div class="die-scene" data-idx="2">
+            <div class="die-cube">
+              <div class="die-face f1">⚀</div>
+              <div class="die-face f2">⚁</div>
+              <div class="die-face f3">⚂</div>
+              <div class="die-face f4">⚃</div>
+              <div class="die-face f5">⚄</div>
+              <div class="die-face f6">⚅</div>
+            </div>
+          </div>
+          <div class="die-scene" data-idx="3">
+            <div class="die-cube">
+              <div class="die-face f1">⚀</div>
+              <div class="die-face f2">⚁</div>
+              <div class="die-face f3">⚂</div>
+              <div class="die-face f4">⚃</div>
+              <div class="die-face f5">⚄</div>
+              <div class="die-face f6">⚅</div>
+            </div>
+          </div>
+          <div class="die-scene" data-idx="4">
+            <div class="die-cube">
+              <div class="die-face f1">⚀</div>
+              <div class="die-face f2">⚁</div>
+              <div class="die-face f3">⚂</div>
+              <div class="die-face f4">⚃</div>
+              <div class="die-face f5">⚄</div>
+              <div class="die-face f6">⚅</div>
+            </div>
+          </div>
         </div>
 
         <div style="display: flex; gap: 8px; justify-content: center;">
@@ -1722,7 +1804,7 @@
           <button class="btn secondary" id="btn-leave-game" style="flex: 0.5;">退出</button>
         </div>
 
-        <div style="font-size: 10px; color: var(--text-dim); text-align: center;">※キープしたいサイコロをタップして「サイコロを振る」を押してください。</div>
+        <div style="font-size: 10px; color: var(--text-dim); text-align: center;">※キープ（固定）したいサイコロをタップして「サイコロを振る」を押してください。</div>
       </div>
 
       <!-- 右：スコアボード -->
@@ -1756,7 +1838,9 @@
       const key = localStorage.getItem('wetalks_supabase_key') || 'sb_publishable_lkhrFuMlNyEmUX4RTFApKw_AhD1sAkV';
       try {
         supabaseClient = supabase.createClient(url, key);
-      } catch(e) {}
+      } catch(e) {
+        console.error(e);
+      }
 
       // ─── 状態管理 ───
       let isSolo = false;
@@ -1770,6 +1854,15 @@
       let rollCount = 0;
       let isMyTurn = false;
       let gameActive = false;
+
+      // 3Dアニメーション用（ロールごとに回転角を累積加算して回転を継続させる）
+      let rollRotations = [
+        { x: 0, y: 0 },
+        { x: 0, y: 0 },
+        { x: 0, y: 0 },
+        { x: 0, y: 0 },
+        { x: 0, y: 0 }
+      ];
 
       // ヨットの役定義
       const CATEGORIES = [
@@ -1825,13 +1918,83 @@
         return unique === "12345" || unique === "23456";
       }
 
+      // ─── 3Dダイス用の回転角取得 ───
+      function getCubeTransform(idx, value) {
+        const rx = rollRotations[idx].x;
+        const ry = rollRotations[idx].y;
+        
+        switch (value) {
+          case 1: return 'rotateX(' + rx + 'deg) rotateY(' + ry + 'deg)';
+          case 6: return 'rotateX(' + rx + 'deg) rotateY(' + (ry + 180) + 'deg)';
+          case 3: return 'rotateX(' + rx + 'deg) rotateY(' + (ry + 90) + 'deg)';
+          case 4: return 'rotateX(' + rx + 'deg) rotateY(' + (ry - 90) + 'deg)';
+          case 2: return 'rotateX(' + (rx - 90) + 'deg) rotateY(' + ry + 'deg)';
+          case 5: return 'rotateX(' + (rx + 90) + 'deg) rotateY(' + ry + 'deg)';
+          default: return 'rotateX(' + rx + 'deg) rotateY(' + ry + 'deg)';
+        }
+      }
+
       // ─── ダイス表示更新 ───
-      const DICE_CHARS = ["", "⚀", "⚁", "⚂", "⚃", "⚄", "⚅"];
       function updateDiceUI() {
-        DOM.diceContainer.querySelectorAll('.dice').forEach((dice, idx) => {
-          dice.textContent = DICE_CHARS[diceValues[idx]];
-          dice.classList.toggle('kept', diceKept[idx]);
+        const scenes = DOM.diceContainer.querySelectorAll('.die-scene');
+        scenes.forEach((scene, idx) => {
+          scene.classList.toggle('kept', diceKept[idx]);
+          const cube = scene.querySelector('.die-cube');
+          if (cube) {
+            cube.style.transform = getCubeTransform(idx, diceValues[idx]);
+          }
         });
+      }
+
+      // キープの切り替え
+      function toggleKeep(idx) {
+        if (!gameActive || !isMyTurn || rollCount === 0) return;
+        diceKept[idx] = !diceKept[idx];
+        updateDiceUI();
+        if (!isSolo) sendGameState(false);
+      }
+
+      // 手番ステータス文言の表示切り替え
+      function updateGameStatus() {
+        if (!gameActive) {
+          DOM.statusBar.textContent = "対戦相手を待っています...";
+          return;
+        }
+        if (isMyTurn) {
+          DOM.statusBar.textContent = "🟢 あなたの番です。ダイスを振るか、得点表の確定させたい役をクリックしてください。";
+          DOM.btnRoll.disabled = rollCount >= 3;
+        } else {
+          DOM.statusBar.textContent = "🔴 " + oppName + " の手番です。相手のプレイを待っています...";
+          DOM.btnRoll.disabled = true;
+        }
+      }
+
+      // ゲーム終了判定
+      function checkGameOver() {
+        const myDone = CATEGORIES.every(cat => myScores[cat.id] !== undefined);
+        const oppDone = isSolo || CATEGORIES.every(cat => oppScores[cat.id] !== undefined);
+        
+        if (myDone && oppDone) {
+          gameActive = false;
+          const myTotal = Object.values(myScores).reduce((a, b) => a + b, 0);
+          const oppTotal = isSolo ? 0 : Object.values(oppScores).reduce((a, b) => a + b, 0);
+          
+          let resultMsg = "ゲーム終了！あなたの最終得点: " + myTotal + "点";
+          if (!isSolo) {
+            resultMsg += " 対 " + oppName + ": " + oppTotal + "点\\n";
+            if (myTotal > oppTotal) {
+              resultMsg += "🏆 あなたの勝ちです！";
+            } else if (myTotal < oppTotal) {
+              resultMsg += "敗北しました...";
+            } else {
+              resultMsg += "引き分けです！";
+            }
+          } else {
+            resultMsg += " (ソロ練習終了)";
+          }
+          DOM.statusBar.textContent = resultMsg;
+          alert(resultMsg);
+        }
       }
 
       // スコアボード描画
@@ -1852,7 +2015,7 @@
           } else if (rollCount > 0 && isMyTurn && gameActive) {
             tdMy.textContent = cat.calc(diceValues);
             tdMy.classList.add('potential');
-            // 行クリックで役を確定
+            // 得点役のクリックで自ら確定
             tr.addEventListener('click', () => selectCategory(cat.id));
           } else {
             tdMy.textContent = '-';
@@ -1877,10 +2040,10 @@
         tdTotalName.textContent = '合計得点';
         const tdMyTotal = document.createElement('td');
         tdMyTotal.className = 'score-val';
-        tdMyTotal.textContent = Object.values(myScores).reduce((a,b)=>a+b, 0);
+        tdMyTotal.textContent = Object.values(myScores).reduce((a, b) => a + b, 0);
         const tdOppTotal = document.createElement('td');
         tdOppTotal.className = 'score-val';
-        tdOppTotal.textContent = Object.values(oppScores).reduce((a,b)=>a+b, 0);
+        tdOppTotal.textContent = Object.values(oppScores).reduce((a, b) => a + b, 0);
         if (isSolo) tdOppTotal.style.display = 'none';
 
         totalTr.appendChild(tdTotalName);
@@ -1891,7 +2054,7 @@
 
       // ─── ゲーム進行ロジック ───
       function selectCategory(catId) {
-        if (!isMyTurn || myScores[catId] !== undefined || rollCount === 0) return;
+        if (!isMyTurn || myScores[catId] !== undefined || rollCount === 0 || !gameActive) return;
         
         const score = CATEGORIES.find(c => c.id === catId).calc(diceValues);
         myScores[catId] = score;
@@ -1901,21 +2064,29 @@
         rollCount = 0;
 
         if (isSolo) {
+          isMyTurn = true; // ソロなのでずっと自分
           checkGameOver();
         } else {
           isMyTurn = false;
-          sendGameState();
+          sendGameState(true); // 相手に手番を交代するため turnEnded = true
+          checkGameOver();
         }
+        
+        DOM.btnRoll.textContent = "サイコロを振る (残り3回)";
         updateScoreboard();
         updateDiceUI();
         updateGameStatus();
       }
 
       function rollDice() {
-        if (!isMyTurn || rollCount >= 3) return;
+        if (!isMyTurn || rollCount >= 3 || !gameActive) return;
+        
         for (let i = 0; i < 5; i++) {
           if (!diceKept[i]) {
             diceValues[i] = Math.floor(Math.random() * 6) + 1;
+            // 毎回異なる回転角を加算して3Dローテーションさせる
+            rollRotations[i].x += 720 + Math.floor(Math.random() * 4) * 90;
+            rollRotations[i].y += 720 + Math.floor(Math.random() * 4) * 90;
           }
         }
         rollCount++;
@@ -1924,15 +2095,16 @@
 
         updateDiceUI();
         updateScoreboard();
+        updateGameStatus();
         
         if (!isSolo) {
-          sendGameState();
+          sendGameState(false);
         }
       }
 
-      // ─── Supabaseリアルタイム同期 ───
+      // ─── Supabase リアルタイム通信 ───
       function joinRoom(roomCode) {
-        if (!supabaseClient) return alert("シミュレーターの設定でSupabaseが連携されていないため動作しません。");
+        if (!supabaseClient) return alert("Supabaseの設定が有効になっていないため対戦できません。");
         
         isSolo = false;
         DOM.colOpp.style.display = 'table-cell';
@@ -1941,6 +2113,12 @@
         DOM.lobby.style.display = 'none';
         DOM.game.style.display = 'flex';
 
+        myScores = {};
+        oppScores = {};
+        rollCount = 0;
+        diceValues = [1, 1, 1, 1, 1];
+        diceKept = [false, false, false, false, false];
+
         // 部屋のチャンネルをリッスン
         gameChannel = supabaseClient.channel('yacht-' + roomCode);
         gameChannel
@@ -1948,22 +2126,29 @@
             if (payload.id !== myId) {
               oppId = payload.id;
               oppName = payload.name;
-              // 挨拶を返す
-              gameChannel.send({ type: 'broadcast', event: 'welcome', payload: { id: myId, name: myName, start: true } });
+              // 挨拶兼初期設定を送信
+              gameChannel.send({ 
+                type: 'broadcast', 
+                event: 'welcome', 
+                payload: { id: myId, name: myName, scores: myScores } 
+              });
               gameActive = true;
-              isMyTurn = true; // 部屋を立てた人が先攻
+              isMyTurn = true; // 部屋を建てたホストが先攻
               updateGameStatus();
               updateScoreboard();
+              updateDiceUI();
             }
           })
           .on('broadcast', { event: 'welcome' }, ({ payload }) => {
             if (payload.id !== myId) {
               oppId = payload.id;
               oppName = payload.name;
+              oppScores = payload.scores;
               gameActive = true;
-              isMyTurn = false; // 誘われた人が後攻
+              isMyTurn = false; // 参加した側は後攻
               updateGameStatus();
               updateScoreboard();
+              updateDiceUI();
             }
           })
           .on('broadcast', { event: 'state' }, ({ payload }) => {
@@ -1971,16 +2156,19 @@
               diceValues = payload.diceValues;
               oppScores = payload.scores;
               
-              // 相手が役を記入した場合、手番が移る
+              // 相手が役を確定した場合（ターンエンド）に手番を交代
               if (payload.turnEnded) {
                 isMyTurn = true;
                 rollCount = 0;
                 diceKept = [false, false, false, false, false];
                 DOM.btnRoll.textContent = "サイコロを振る (残り3回)";
+                DOM.btnRoll.disabled = false;
               }
+              
               updateDiceUI();
               updateScoreboard();
               updateGameStatus();
+              checkGameOver();
             }
           })
           .on('broadcast', { event: 'leave' }, () => {
@@ -1989,13 +2177,13 @@
           })
           .subscribe((status) => {
             if (status === 'SUBSCRIBED') {
-              // 参加をアナウンス
+              // ルームに参加を表明
               gameChannel.send({ type: 'broadcast', event: 'join', payload: { id: myId, name: myName } });
             }
           });
       }
 
-      function sendGameState() {
+      function sendGameState(turnEnded = false) {
         if (!gameChannel) return;
         gameChannel.send({
           type: 'broadcast',
@@ -2004,7 +2192,7 @@
             id: myId,
             diceValues: diceValues,
             scores: myScores,
-            turnEnded: (rollCount === 0) // rollCountがリセット＝確定手番終了
+            turnEnded: turnEnded
           }
         });
       }
@@ -2015,6 +2203,7 @@
         DOM.headerText.textContent = "We talks Yacht (Solo)";
         DOM.lobby.style.display = 'none';
         DOM.game.style.display = 'flex';
+        
         gameActive = true;
         isMyTurn = true;
         
@@ -2051,12 +2240,12 @@
       });
       DOM.btnSolo.addEventListener('click', startSoloPlay);
       DOM.btnLeave.addEventListener('click', leaveGame);
-
       DOM.btnRoll.addEventListener('click', rollDice);
 
-      DOM.diceContainer.querySelectorAll('.dice').forEach(dice => {
-        dice.addEventListener('click', () => {
-          const idx = parseInt(dice.getAttribute('data-idx'));
+      // ダイスのクリック判定（キープ切り替え）
+      DOM.diceContainer.querySelectorAll('.die-scene').forEach(scene => {
+        scene.addEventListener('click', () => {
+          const idx = parseInt(scene.getAttribute('data-idx'));
           toggleKeep(idx);
         });
       });
@@ -2687,7 +2876,7 @@
       });
 
     })();
-  \x3C\x2Fscript\x3E
+  \x3C/script\x3E
 </body>
 </html>
 `;
@@ -2797,14 +2986,14 @@
             writeToConsole("--- コード表示終了 ---");
           } else throw new Error("CORS restriction");
         } catch (e) {
-          writeToConsole(`[セキュリティ制限(CORS)により取得不可]\n現在のWebページ (${activeTab.url}) は外部ドメインであるため、ブラウザのセキュリティ仕様により中身のコードをJavaScriptで直接覗き見ることができません。`, true);
+          writeToConsole(`[セキュリティ制限(CORS)により取得不可]\\n現在のWebページ (${activeTab.url}) は外部ドメインであるため、ブラウザのセキュリティ仕様により中身のコードをJavaScriptで直接覗き見ることができません。`, true);
         }
     } else if (cmd === 'this browser-version') {
         writeToConsole(`Browser Version: ${BROWSER_VERSION}`);
     } else if (cmd === 'clear') {
         DOMElements.consoleBody.innerHTML = '';
     } else if (cmd === 'help command ? -a') {
-        writeToConsole(`使用可能なコマンド:\n  This web in my book   - 現在のページをお気に入りに追加\n  view-source           - 現在ページのソースコードを表示 (CORS制限あり)\n  this browser-version  - バージョン情報を表示\n  clear                 - コンソール画面をクリア\n  Help command ? -a     - このヘルプメッセージを表示`);
+        writeToConsole(`使用可能なコマンド:\\n  This web in my book   - 現在のページをお気に入りに追加\\n  view-source           - 現在ページのソースコードを表示 (CORS制限あり)\\n  this browser-version  - バージョン情報を表示\\n  clear                 - コンソール画面をクリア\\n  Help command ? -a     - このヘルプメッセージを表示`);
     } else {
       writeToConsole("エラー: 未知のコマンド「" + cmd + "」です。'Help command ? -a' と入力してください。", true);
     }
@@ -3023,7 +3212,7 @@
       <div class="err-icon">🔌</div>
       <div class="err-title">ページを表示できませんでした</div>
       <div class="err-desc">
-        <strong>${url}</strong> に接続できませんでした。<br>
+        <strong>\${url}</strong> に接続できませんでした。<br>
         URLを確認するか、別のサイトをお試しください。<br>
         ※ セキュリティ制限により、一部のサイトはiframe内では表示できません。
       </div>
