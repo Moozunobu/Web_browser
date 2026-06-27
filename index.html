@@ -322,7 +322,7 @@
 
     /* ─── エラーページ (iOS互換絶対配置型) ─── */
     .error-page {
-      position: absolute; inset: 0; width: 100%; height: 100%; background: var(--ntpage-bg); display: none;
+      width: 100%; height: 100%; flex: 1; background: var(--ntpage-bg); display: none;
       flex-direction: column; align-items: center; justify-content: center; gap: 20px;
       color: var(--text-main); text-align: center; padding: 40px;
     }
@@ -1045,6 +1045,7 @@
         DOM.viewSettings.style.display = (view === 'settings') ? 'flex' : 'none';
 
         if (view === 'lobby') {
+          stopLocalPresence();
           DOM.btnBack.style.visibility = 'hidden';
           DOM.btnToSettings.style.visibility = 'visible';
           DOM.titleText.textContent = 'We talks';
@@ -1057,6 +1058,7 @@
           startLocalPresence();
           loadRoomTitleAndRender();
         } else if (view === 'settings') {
+          stopLocalPresence();
           DOM.btnBack.style.visibility = 'visible';
           DOM.btnToSettings.style.visibility = 'hidden';
           DOM.titleText.textContent = '接続キー設定';
@@ -1097,7 +1099,6 @@
           delBtn.style.cssText = 'background:#ff3b30; color:white; border:none; padding:4px 10px; border-radius:4px; font-size:11px; cursor:pointer; font-weight:bold;';
           delBtn.textContent = '削除';
           delBtn.addEventListener('click', async () => {
-            // 安全なダブルクォーテーション結合に修正
             if (confirm("本当に「" + room.name + "」トークルームと、その中のチャット履歴をすべて削除しますか？")) {
               await deleteRoomAndMessages(room.id);
               renderSettingsRoomList();
@@ -2138,9 +2139,6 @@
       let stackedValue = null; 
       let lastAction = null; // 'draw', 'play_me', 'play_opp', 'draw_opp', null
 
-      const COLORS = ['red', 'yellow', 'green', 'blue'];
-      const VALUES = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'Skip', 'Draw2'];
-
       const DOM = {
         lobby: document.getElementById('lobby-screen'),
         game: document.getElementById('game-screen'),
@@ -2283,7 +2281,6 @@
 
         if (card.color === 'wild') {
           activeColor = COLORS[Math.floor(Math.random() * COLORS.length)];
-          DOM.statusBar.textContent = "ワイルドが指定されました！次の色は " + activeColor.toUpperCase();
         } else {
           activeColor = card.color;
         }
@@ -2790,7 +2787,7 @@
       delBtn.innerHTML = "&times;";
       delBtn.title = "お気に入りを削除";
       delBtn.addEventListener("click", e => {
-        e.stopPropagation(); // 親のクリックイベント（ページ移動）を抑制！
+        e.stopPropagation(); // 親のクリックイベント（ページ移動）を抑制
         if (confirm("お気に入り「" + s.label + "」を削除しますか？")) {
           deleteBookmarkByIndex(idx);
         }
@@ -2994,7 +2991,7 @@
 
   function openTab(url) {
     const id = ++idCounter;
-    // 履歴管理用変数のタイポを修正 (histIdx)
+    // 履歴管理用変数のタイポを完全に修正 (histIdx)
     const tab = { id: id, title: "新しいタブ", favicon: "🌐", url: null, history: [], histIdx: -1 };
     tabs.push(tab);
     const ntPage = buildNTPage(id);
