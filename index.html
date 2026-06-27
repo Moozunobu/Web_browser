@@ -145,7 +145,7 @@
 
     /* ─── 検索補助ツールバーのスタイル ─── */
     #search-tools {
-      display: none; /* 初期は非表示 */
+      display: none; /* 初期は非表示・検索時にJSで制御 */
       align-items: center;
       gap: 6px;
       margin-left: 8px;
@@ -676,7 +676,7 @@
   </style>
   
   <!-- Supabase CDN (v2) -->
-  \x3Cscript src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"\x3E\x3C\x2Fscript\x3E
+  \x3Cscript src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"\x3E\x3C/script\x3E
 </head>
 <body>
 
@@ -1538,7 +1538,7 @@
       });
 
     })();
-  \x3C\x2Fscript\x3E
+  \x3C/script\x3E
 </body>
 </html>
 `;
@@ -2002,6 +2002,7 @@
         updateGameStatus();
       }
 
+      // サイコロを振る
       function rollDice() {
         if (!isMyTurn || rollCount >= 3 || !gameActive) return;
         
@@ -2212,7 +2213,7 @@
     /* ─── ゲームエリア ─── */
     .game-area { display: flex; flex-direction: column; flex: 1; justify-content: space-between; overflow: hidden; gap: 8px; }
     
-    /* 対戦相手の手札（枚数だけ表示） */
+    /* 对戦相手の手札（枚数だけ表示） */
     .opponent-hand-area { background: var(--panel); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
     .opponent-cards { display: flex; gap: -15px; } /* 重なるようにマイナスマージン */
     .card-back {
