@@ -676,7 +676,7 @@
   </style>
   
   <!-- Supabase CDN (v2) -->
-  \x3Cscript src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"\x3E\x3C/script\x3E
+  \x3Cscript src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"\x3E\x3C\x2Fscript\x3E
 </head>
 <body>
 
@@ -690,7 +690,7 @@
   <!-- ─── ロビー画面 ─── -->
   <div id="view-lobby">
     <div class="lobby-title">
-      <span id="lobby-online-count-tag">● オンライン: 取得中...</span>
+      <span id="lobby-online-count-tag">● オンライン: " + count + "人</span>
       <span id="lobby-username-tag">取得中...</span>
     </div>
     <ul class="room-list" id="room-list-container"></ul>
@@ -1538,7 +1538,7 @@
       });
 
     })();
-  \x3C/script\x3E
+  \x3C\x2Fscript\x3E
 </body>
 </html>
 `;
@@ -1646,7 +1646,7 @@
     
     .game-status-bar { padding: 8px; background: rgba(0,0,0,0.15); border-radius: 6px; font-size: 13px; text-align: center; font-weight: bold; }
   </style>
-  \x3Cscript src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"\x3E\x3C/script\x3E
+  \x3Cscript src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"\x3E\x3C\x2Fscript\x3E
 </head>
 <body>
 
@@ -2002,7 +2002,6 @@
         updateGameStatus();
       }
 
-      // サイコロを振る
       function rollDice() {
         if (!isMyTurn || rollCount >= 3 || !gameActive) return;
         
@@ -2176,7 +2175,7 @@
       });
 
     })();
-  \x3C/script\x3E
+  \x3C\x2Fscript\x3E
 </body>
 </html>
 `;
@@ -2213,7 +2212,7 @@
     /* ─── ゲームエリア ─── */
     .game-area { display: flex; flex-direction: column; flex: 1; justify-content: space-between; overflow: hidden; gap: 8px; }
     
-    /* 对戦相手の手札（枚数だけ表示） */
+    /* 対戦相手の手札（枚数だけ表示） */
     .opponent-hand-area { background: var(--panel); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
     .opponent-cards { display: flex; gap: -15px; } /* 重なるようにマイナスマージン */
     .card-back {
@@ -2289,7 +2288,7 @@
       animation: slideToDiscardFromOpp 0.3s cubic-bezier(0.25, 1, 0.5, 1) forwards;
     }
   </style>
-  \x3Cscript src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"\x3E\x3C/script\x3E
+  \x3Cscript src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"\x3E\x3C\x2Fscript\x3E
 </head>
 <body>
 
@@ -2801,7 +2800,7 @@
       });
 
     })();
-  \x3C/script\x3E
+  \x3C\x2Fscript\x3E
 </body>
 </html>
 `;
@@ -2897,6 +2896,48 @@
     }
   }
 
+  // ─── 検索補助ツールバーのアクティブ化・非表示制御ロジック ───
+  function getQueryFromUrl(url) {
+    if (!url) return "";
+    try {
+      const parsed = new URL(url);
+      return parsed.searchParams.get("q") || "";
+    } catch (_) {
+      // 相対URLやエラー発生時のフォールバックパース
+      const match = url.match(/[?&]q=([^&]+)/);
+      return match ? decodeURIComponent(match[1]) : "";
+    }
+  }
+
+  function updateSearchTools(tab) {
+    const searchTools = document.getElementById('search-tools');
+    if (!searchTools) return;
+
+    // Bingの各種検索ページを検知して表示、それ以外は非表示
+    if (tab && tab.url && (tab.url.includes("bing.com/search") || tab.url.includes("bing.com/images/search") || tab.url.includes("bing.com/videos/search") || tab.url.includes("bing.com/maps"))) {
+      searchTools.style.display = 'flex';
+      
+      const btnAll = document.getElementById('btn-search-all');
+      const btnImages = document.getElementById('btn-search-images');
+      const btnVideos = document.getElementById('btn-search-videos');
+      
+      if (btnAll) btnAll.classList.remove('active');
+      if (btnImages) btnImages.classList.remove('active');
+      if (btnVideos) btnVideos.classList.remove('active');
+
+      // 現在開いているURLに適合するボタンを青くハイライト
+      if (tab.url.includes("bing.com/images/search") || tab.url.includes("images/search")) {
+        if (btnImages) btnImages.classList.add('active');
+      } else if (tab.url.includes("bing.com/videos/search") || tab.url.includes("videos/search")) {
+        if (btnVideos) btnVideos.classList.add('active');
+      } else {
+        if (btnAll) btnAll.classList.add('active');
+      }
+    } else {
+      searchTools.style.display = 'none';
+    }
+  }
+
   function applySettings() {
     DOMElements.body.classList.toggle('theme-light', settings.theme === 'light');
     DOMElements.body.classList.toggle('layout-vertical', settings.tabLayout === 'vertical');
@@ -2927,7 +2968,7 @@
     applySettings();
   }
   
-  // ─── コマンドライン ───────────────────────────────────────────────────────
+  // ─── コマンドライン ───
   function writeToConsole(text, isError = false) {
     const span = document.createElement("div");
     span.style.color = isError ? "#ff3333" : "#00ff66";
@@ -3191,7 +3232,7 @@
       <div class="err-icon">🔌</div>
       <div class="err-title">ページを表示できませんでした</div>
       <div class="err-desc">
-        <strong>\${url}</strong> に接続できませんでした。<br>
+        <strong>${url}</strong> に接続できませんでした。<br>
         URLを確認するか、別のサイトをお試しください。<br>
         ※ セキュリティ制限により、一部のサイトはiframe内では表示できません。
       </div>
@@ -3283,6 +3324,7 @@
     updateNav(tab);
     renderTabs();
     checkAndApplySplitScreen(tab); // タブ切り替え時の自動画面分割
+    updateSearchTools(tab); // アクティブタブ切り替え時に検索補助バーを制御
   }
 
   function openTab(url) {
@@ -3331,6 +3373,7 @@
     if (activeId === tabId) {
       updateUrlBar(tab);
       updateNav(tab);
+      updateSearchTools(tab); // ナビゲーション時にお調べボタンを制御
     }
 
     DOMElements.leftPane.querySelectorAll(`[data-tabid="${tabId}"]`).forEach(e => e.remove());
@@ -3370,6 +3413,7 @@
             if (activeId === tabId) {
               updateUrlBar(tab);
               updateNav(tab);
+              updateSearchTools(tab); // 読込完了時にも追従
             }
           }
           
@@ -3410,6 +3454,7 @@
       updateUrlBar(tab);
       updateNav(tab);
       renderTabs();
+      updateSearchTools(tab); // 履歴移動時にお調べボタンを制御
 
       DOMElements.leftPane.querySelectorAll(`[data-tabid="${activeId}"]`).forEach(e => e.remove());
       startLoading();
@@ -3467,6 +3512,52 @@
       }
     }
   });
+
+  // ─── 検索補助ボタン（右上）のクリック動作紐付け ───
+  const btnSearchFocus = document.getElementById('btn-search-focus');
+  const btnSearchAll = document.getElementById('btn-search-all');
+  const btnSearchImages = document.getElementById('btn-search-images');
+  const btnSearchVideos = document.getElementById('btn-search-videos');
+
+  if (btnSearchFocus) {
+    btnSearchFocus.addEventListener('click', () => {
+      DOMElements.urlBar.focus();
+      DOMElements.urlBar.select();
+    });
+  }
+
+  if (btnSearchAll) {
+    btnSearchAll.addEventListener('click', () => {
+      const tab = tabs.find(t => t.id === activeId);
+      if (!tab || !tab.url) return;
+      const query = getQueryFromUrl(tab.url);
+      if (query) {
+        navigateTo(activeId, `https://www.bing.com/search?q=${encodeURIComponent(query)}`);
+      }
+    });
+  }
+
+  if (btnSearchImages) {
+    btnSearchImages.addEventListener('click', () => {
+      const tab = tabs.find(t => t.id === activeId);
+      if (!tab || !tab.url) return;
+      const query = getQueryFromUrl(tab.url);
+      if (query) {
+        navigateTo(activeId, `https://www.bing.com/images/search?q=${encodeURIComponent(query)}`);
+      }
+    });
+  }
+
+  if (btnSearchVideos) {
+    btnSearchVideos.addEventListener('click', () => {
+      const tab = tabs.find(t => t.id === activeId);
+      if (!tab || !tab.url) return;
+      const query = getQueryFromUrl(tab.url);
+      if (query) {
+        navigateTo(activeId, `https://www.bing.com/videos/search?q=${encodeURIComponent(query)}`);
+      }
+    });
+  }
 
   // 設定パネル関係
   DOMElements.btnSettings.addEventListener('click', () => DOMElements.settingsPanel.classList.toggle('active'));
